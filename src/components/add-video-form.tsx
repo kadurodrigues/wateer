@@ -4,8 +4,9 @@ import { Link2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useQueue } from "@/components/queue-provider";
+import { cn } from "@/lib/utils";
 
-export function AddVideoForm() {
+export function AddVideoForm({ className }: { className?: string }) {
   const { addItem } = useQueue();
   const [url, setUrl] = React.useState("");
   const [isAdding, setIsAdding] = React.useState(false);
@@ -21,7 +22,7 @@ export function AddVideoForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-3 max-w-3xl">
+    <form onSubmit={handleSubmit} className={cn("flex min-w-0 gap-3", className)}>
       <div className="relative flex-1">
         <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
           <Link2 className="h-4 w-4 text-muted-foreground" />
@@ -37,7 +38,7 @@ export function AddVideoForm() {
       <Button
         type="submit"
         disabled={isAdding || !url.trim()}
-        className="rounded-2xl bg-brand px-6 py-6 text-sm font-semibold text-brand-foreground shadow-lg shadow-brand/25 hover:bg-brand-hover"
+        className="shrink-0 rounded-2xl bg-brand px-6 py-6 text-sm font-semibold text-brand-foreground shadow-lg shadow-brand/25 hover:bg-brand-hover"
       >
         {isAdding ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add to Queue"}
       </Button>

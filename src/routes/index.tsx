@@ -6,14 +6,21 @@ import { QueuePanel } from "@/components/queue-panel";
 import { useQueue } from "@/components/queue-provider";
 import { VideoPlayer } from "@/components/video-player";
 import { VideoTagEditor } from "@/components/video-tag-editor";
+import { WateerLogo } from "@/components/wateer-logo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Wateer" },
-      { name: "description", content: "A personal YouTube watch-later queue with a player and a reorderable list." },
+      {
+        name: "description",
+        content: "A personal YouTube watch-later queue with a player and a reorderable list.",
+      },
       { property: "og:title", content: "Wateer" },
-      { property: "og:description", content: "A personal YouTube watch-later queue with a player and a reorderable list." },
+      {
+        property: "og:description",
+        content: "A personal YouTube watch-later queue with a player and a reorderable list.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -37,7 +44,11 @@ function App() {
       <div className="mx-auto flex h-screen w-full max-w-[1200px] flex-col lg:flex-row lg:p-4">
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-none bg-background shadow-xl lg:rounded-3xl">
           <header className="border-b border-border p-6">
-            <AddVideoForm />
+            {/* One gap-3 rhythm across logo → input → button. */}
+            <div className="flex max-w-3xl items-center gap-3">
+              <WateerLogo />
+              <AddVideoForm className="flex-1" />
+            </div>
           </header>
 
           <VideoPlayer
@@ -54,13 +65,9 @@ function App() {
                 {currentItem.title}
               </h1>
               <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-                <span className="truncate">
-                  {currentItem.channelName ?? "Unknown channel"}
-                </span>
+                <span className="truncate">{currentItem.channelName ?? "Unknown channel"}</span>
                 <span className="text-border">|</span>
-                <span className="shrink-0">
-                  Added {formatRelativeDate(currentItem.addedAt)}
-                </span>
+                <span className="shrink-0">Added {formatRelativeDate(currentItem.addedAt)}</span>
               </div>
               {currentItem.bookmarked && (
                 <VideoTagEditor

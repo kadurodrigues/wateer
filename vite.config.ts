@@ -1,19 +1,62 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
-//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
-//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { fileURLToPath } from "node:url";
 
-export default defineConfig({
-  // Pin the deploy target to Vercel. The default is `cloudflare-module`, which
-  // builds an output layout Vercel can't run. Lovable's own builds ignore this —
-  // LOVABLE_NITRO_PRESET pins them to Cloudflare regardless.
-  nitro: { preset: "vercel" },
-  tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
-  },
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import { nitro } from "nitro/vite";
+import { defineConfig, type PluginOption } from "vite";
+import tsConfigPaths from "vite-tsconfig-paths";
+
+export default defineConfig(({ command }) => {
+  const plugins: PluginOption[] = [
+    tailwindcss(),
+    tsConfigPaths({ projects: ["./tsconfig.json"] }),
+    tanstackStart({
+      // Fail the build if client code reaches for server-only modules.
+      importProtection: {
+        behavior: "error",
+        client: { files: ["**/server/**"], specifiers: ["server-only"] },
+      },
+      // Route the bundled server entry to src/server.ts, our SSR error wrapper.
+      server: { entry: "server" },
+    }),
+  ];
+
+  // Nitro emits the deploy bundle, so it has nothing to do while serving.
+  // The `vercel` preset is pinned because Nitro otherwise guesses a target from
+  // the environment, which yields a layout Vercel can't run.
+  if (command === "build") {
+    plugins.push(nitro({ preset: "vercel" }));
+  }
+
+  // After tanstackStart, so it transforms the route modules that plugin generates.
+  plugins.push(viteReact());
+
+  return {
+    plugins,
+    resolve: {
+      alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+      dedupe: [
+        "react",
+        "react-dom",
+        "react/jsx-runtime",
+        "react/jsx-dev-runtime",
+        "@tanstack/react-query",
+        "@tanstack/query-core",
+      ],
+    },
+    optimizeDeps: {
+      include: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "react/jsx-runtime",
+        "react/jsx-dev-runtime",
+      ],
+    },
+    server: {
+      host: "::",
+      port: 8080,
+    },
+  };
 });

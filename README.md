@@ -10,12 +10,13 @@ bookmark, and pick up where you left off — playback position is remembered per
 
 ## Development
 
-You need Node.js — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+You need Node.js — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+— and [Bun](https://bun.sh), which owns the lockfile.
 
 ```sh
 git clone <this-repository-url>
 cd wateer-app
-npm install
+bun install
 npm run dev
 ```
 
@@ -29,9 +30,10 @@ npm run dev
 
 ### Lockfiles
 
-`bun.lock` is the committed source of truth, because the Lovable editor builds with
-Bun. Running `npm install` locally creates a `package-lock.json`, which is gitignored
-on purpose — committing both makes the package manager Vercel picks ambiguous.
+`bun.lock` is the committed source of truth, and Vercel installs with Bun because of
+it. Running `npm install` locally creates a `package-lock.json`, which is gitignored
+on purpose — committing both makes the package manager Vercel picks ambiguous. Use
+`bun install` when changing dependencies so the committed lockfile stays accurate.
 
 ## Configuration
 
@@ -53,9 +55,12 @@ YOUTUBE_API_KEY=your-key-here
 
 ## Deployment
 
-Deployed on Vercel. `vite.config.ts` pins Nitro to the `vercel` preset — without it
-the build defaults to `cloudflare-module` and the server functions won't run on
-Vercel.
+Deployed on Vercel, redeploying automatically on every push to `main`.
+
+`vite.config.ts` pins Nitro to the `vercel` preset. Left unpinned, Nitro guesses a
+target from the environment, so a local `npm run build` would emit a layout that
+doesn't match Vercel's Build Output API. Nitro only runs on `build`; it has no role
+in the dev server.
 
 Set `YOUTUBE_API_KEY` in the Vercel project's environment variables for Production,
 Preview, and Development.
@@ -66,9 +71,3 @@ Preview, and Development.
 - TypeScript
 - React
 - Tailwind CSS
-
-## Lovable
-
-This project is also connected to [Lovable](https://lovable.dev). Commits pushed to
-the connected branch sync back into the Lovable editor, so keep that branch working
-and avoid rewriting published history.

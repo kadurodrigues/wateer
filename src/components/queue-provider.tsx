@@ -1,17 +1,17 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import {
-  fetchVideoDuration,
-  fetchVideoMetadata,
-} from "@/lib/youtube.functions";
-import {
-  buildYouTubeEmbedUrl,
-  buildYouTubeThumbnailUrl,
-  extractYouTubeId,
-} from "@/lib/youtube";
+import { fetchVideoDuration, fetchVideoMetadata } from "@/lib/youtube.functions";
+import { buildYouTubeEmbedUrl, buildYouTubeThumbnailUrl, extractYouTubeId } from "@/lib/youtube";
 import { reorderMatching } from "@/lib/queue-order";
-import { normalizeTags, type QueueTag } from "@/lib/tags";
+import {
+  addTagToLibrary as withTagInLibrary,
+  mergeTagSources,
+  normalizeTags,
+  removeTagByName,
+  removeTagFromLibrary,
+  type QueueTag,
+} from "@/lib/tags";
 
 export type QueueItem = {
   id: string;
@@ -21,7 +21,6 @@ export type QueueItem = {
   channelName: string | null;
   duration: number | null;
   thumbnail: string;
-  note: string;
   tags: QueueTag[];
   watched: boolean;
   bookmarked: boolean;
@@ -45,10 +44,7 @@ type QueueState = {
 export type SidebarTab = "recent" | "bookmarks";
 
 export type ReorderSection =
-  | "unwatched"
-  | "watched"
-  | "bookmarked-unwatched"
-  | "bookmarked-watched";
+  "unwatched" | "watched" | "bookmarked-unwatched" | "bookmarked-watched";
 
 type QueueContextValue = QueueState & {
   loaded: boolean;
@@ -59,7 +55,13 @@ type QueueContextValue = QueueState & {
   unwatched: QueueItem[];
   watched: QueueItem[];
   bookmarked: QueueItem[];
+  /** Every saved tag, whether or not a video currently uses it. */
   allTags: QueueTag[];
+  /** Only the tags currently applied to a bookmarked video. */
+  usedTags: QueueTag[];
+  addTagToLibrary: (tag: QueueTag) => void;
+  deleteTag: (name: string) => void;
+  countTagUsage: (name: string) => number;
   history: HistoryEntry[];
   addItem: (url: string) => Promise<void>;
   removeItem: (id: string) => void;
@@ -71,7 +73,6 @@ type QueueContextValue = QueueState & {
     section: ReorderSection,
     position?: "before" | "after",
   ) => void;
-  updateNote: (id: string, note: string) => void;
   updateTags: (id: string, tags: QueueTag[]) => void;
   updatePlayback: (id: string, seconds: number) => void;
   toggleBookmark: (id: string) => void;
@@ -133,8 +134,7 @@ function normalizeHistory(entries: unknown): HistoryEntry[] {
     if (!videoId || !url || seen.has(videoId)) continue;
     seen.add(videoId);
     const titleRaw = (entry as HistoryEntry).title;
-    const title =
-      typeof titleRaw === "string" && titleRaw.trim() ? titleRaw.trim() : null;
+    const title = typeof titleRaw === "string" && titleRaw.trim() ? titleRaw.trim() : null;
     const addedAt =
       typeof (entry as HistoryEntry).addedAt === "number"
         ? (entry as HistoryEntry).addedAt
@@ -176,6 +176,7 @@ function mergeHistoryWithItems(
 
 export function QueueProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = React.useState<QueueState>({ items: [], currentId: null });
+  const [tagLibrary, setTagLibrary] = React.useState<QueueTag[]>([]);
   const [autoPlayNext, setAutoPlayNext] = React.useState(false);
   const [history, setHistory] = React.useState<HistoryEntry[]>([]);
   const [historyBackfilled, setHistoryBackfilled] = React.useState(false);
@@ -194,6 +195,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
           autoPlayNext?: boolean;
           history?: unknown;
           historyBackfilled?: boolean;
+          tagLibrary?: unknown;
         };
         if (Array.isArray(parsed.items)) {
           const items = parsed.items.map((item) => ({
@@ -204,6 +206,8 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
                 ? item.playbackSeconds
                 : 0,
           }));
+          const used = items.flatMap((item) => item.tags);
+          setTagLibrary(mergeTagSources(normalizeTags(parsed.tagLibrary), used));
           setState({
             items,
             currentId: parsed.currentId ?? null,
@@ -215,6 +219,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
               : mergeHistoryWithItems(existingHistory, items),
           );
         } else {
+          setTagLibrary(normalizeTags(parsed.tagLibrary));
           setHistory(normalizeHistory(parsed.history));
         }
         if (typeof parsed.autoPlayNext === "boolean") {
@@ -234,9 +239,9 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     if (!loaded || typeof window === "undefined") return;
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ ...state, autoPlayNext, history, historyBackfilled }),
+      JSON.stringify({ ...state, autoPlayNext, history, historyBackfilled, tagLibrary }),
     );
-  }, [state, autoPlayNext, history, historyBackfilled, loaded]);
+  }, [state, autoPlayNext, history, historyBackfilled, tagLibrary, loaded]);
 
   const unwatched = React.useMemo(
     () => state.items.filter((i) => !i.watched && !i.bookmarked && isInQueue(i)),
@@ -247,7 +252,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     [state.items],
   );
   const bookmarked = React.useMemo(() => state.items.filter((i) => i.bookmarked), [state.items]);
-  const allTags = React.useMemo(() => {
+  const usedTags = React.useMemo(() => {
     const seen = new Map<string, QueueTag>();
     for (const item of bookmarked) {
       for (const tag of item.tags) {
@@ -258,15 +263,49 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     }
     return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [bookmarked]);
+
+  const allTags = React.useMemo(
+    () => mergeTagSources(tagLibrary, usedTags),
+    [tagLibrary, usedTags],
+  );
+
+  const addTagToLibrary = React.useCallback((tag: QueueTag) => {
+    setTagLibrary((prev) => withTagInLibrary(prev, tag));
+  }, []);
+
+  const countTagUsage = React.useCallback(
+    (name: string) =>
+      stateRef.current.items.filter((i) =>
+        i.tags.some((tag) => tag.name.toLowerCase() === name.trim().toLowerCase()),
+      ).length,
+    [],
+  );
+
+  /** Deleting a tag removes it from the library and detaches it from every video. */
+  const deleteTag = React.useCallback((name: string) => {
+    setTagLibrary((prev) => removeTagFromLibrary(prev, name));
+    setState((prev) => ({
+      ...prev,
+      items: prev.items.map((i) =>
+        i.tags.some((tag) => tag.name.toLowerCase() === name.trim().toLowerCase())
+          ? { ...i, tags: removeTagByName(i.tags, name) }
+          : i,
+      ),
+    }));
+  }, []);
   const currentItem = React.useMemo(
     () => state.items.find((i) => i.id === state.currentId) ?? null,
     [state.items, state.currentId],
   );
 
+  // Follow the video that starts playing, but never yank the tab out from under
+  // someone who just bookmarked the video they are already watching.
+  const syncedTabForIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!currentItem) return;
+    if (!currentItem || currentItem.id === syncedTabForIdRef.current) return;
+    syncedTabForIdRef.current = currentItem.id;
     setSidebarTab(currentItem.bookmarked ? "bookmarks" : "recent");
-  }, [currentItem?.id, currentItem?.bookmarked]);
+  }, [currentItem]);
 
   const addItem = React.useCallback(async (url: string) => {
     const videoId = extractYouTubeId(url);
@@ -293,7 +332,6 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
         channelName: null,
         duration: null,
         thumbnail: buildYouTubeThumbnailUrl(videoId),
-        note: "",
         tags: [],
         watched: false,
         bookmarked: false,
@@ -303,15 +341,12 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       };
       return {
         items: [...prev.items, newItem],
-        currentId: prev.currentId ?? newItem.id,
+        currentId: newItem.id,
       };
     });
 
     if (!historyRef.current.some((entry) => entry.videoId === videoId)) {
-      setHistory((prev) => [
-        { videoId, url, title: null, addedAt: Date.now() },
-        ...prev,
-      ]);
+      setHistory((prev) => [{ videoId, url, title: null, addedAt: Date.now() }, ...prev]);
     }
 
     try {
@@ -343,16 +378,12 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       setState((prev) => ({
         ...prev,
         items: prev.items.map((i) =>
-          extractYouTubeId(i.url) === videoId
-            ? { ...i, title: i.title ?? "Untitled video" }
-            : i,
+          extractYouTubeId(i.url) === videoId ? { ...i, title: i.title ?? "Untitled video" } : i,
         ),
       }));
       setHistory((prev) =>
         prev.map((entry) =>
-          entry.videoId === videoId
-            ? { ...entry, title: entry.title ?? "Untitled video" }
-            : entry,
+          entry.videoId === videoId ? { ...entry, title: entry.title ?? "Untitled video" } : entry,
         ),
       );
     }
@@ -403,12 +434,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       }
 
       return {
-        items: [
-          ...activeUnwatched,
-          ...activeWatched,
-          ...archivedUnwatched,
-          ...archivedWatched,
-        ],
+        items: [...activeUnwatched, ...activeWatched, ...archivedUnwatched, ...archivedWatched],
         currentId: nextCurrent,
       };
     });
@@ -425,9 +451,9 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
         const nextItems = prev.items.filter((i) => i.id !== id);
         const nextCurrent =
           prev.currentId === id
-            ? nextItems.find((i) => !i.watched && !i.bookmarked && isInQueue(i))?.id ??
+            ? (nextItems.find((i) => !i.watched && !i.bookmarked && isInQueue(i))?.id ??
               nextItems[0]?.id ??
-              null
+              null)
             : prev.currentId;
         return { items: nextItems, currentId: nextCurrent };
       }
@@ -461,13 +487,6 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const updateNote = React.useCallback((id: string, note: string) => {
-    setState((prev) => ({
-      ...prev,
-      items: prev.items.map((i) => (i.id === id ? { ...i, note } : i)),
-    }));
-  }, []);
-
   const updateTags = React.useCallback((id: string, tags: QueueTag[]) => {
     const normalized = normalizeTags(tags);
     setState((prev) => ({
@@ -483,9 +502,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       if (!item || item.playbackSeconds === nextSeconds) return prev;
       return {
         ...prev,
-        items: prev.items.map((i) =>
-          i.id === id ? { ...i, playbackSeconds: nextSeconds } : i,
-        ),
+        items: prev.items.map((i) => (i.id === id ? { ...i, playbackSeconds: nextSeconds } : i)),
       };
     });
   }, []);
@@ -495,7 +512,8 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       const nextItems = prev.items
         .filter((i) => !i.watched || i.bookmarked)
         .map((i) => (i.watched && i.bookmarked ? { ...i, inQueue: false } : i));
-      const nextCurrent = nextItems.find((i) => i.id === prev.currentId)?.id ?? nextItems[0]?.id ?? null;
+      const nextCurrent =
+        nextItems.find((i) => i.id === prev.currentId)?.id ?? nextItems[0]?.id ?? null;
       return { items: nextItems, currentId: nextCurrent };
     });
   }, []);
@@ -523,7 +541,6 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
         channelName: null,
         duration: null,
         thumbnail: buildYouTubeThumbnailUrl(entry.videoId),
-        note: "",
         tags: [],
         watched: false,
         bookmarked: false,
@@ -533,7 +550,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       };
       return {
         items: [...prev.items, newItem],
-        currentId: prev.currentId ?? newItem.id,
+        currentId: newItem.id,
       };
     });
 
@@ -623,6 +640,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       watched,
       bookmarked,
       allTags,
+      usedTags,
+      addTagToLibrary,
+      deleteTag,
+      countTagUsage,
       history,
       addItem,
       removeItem,
@@ -632,7 +653,6 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       sidebarTab,
       setSidebarTab,
       reorder,
-      updateNote,
       updateTags,
       updatePlayback,
       clearWatched,
@@ -652,6 +672,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       watched,
       bookmarked,
       allTags,
+      usedTags,
+      addTagToLibrary,
+      deleteTag,
+      countTagUsage,
       history,
       addItem,
       removeItem,
@@ -661,7 +685,6 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       sidebarTab,
       setSidebarTab,
       reorder,
-      updateNote,
       updateTags,
       updatePlayback,
       clearWatched,

@@ -91,6 +91,44 @@ export function getTagColor(id: TagColorId | undefined): TagColorOption {
   return TAG_COLORS.find((color) => color.id === id) ?? TAG_COLORS[0]!;
 }
 
+function sameName(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** Creating a tag: add it to the library unless that name already exists. */
+export function addTagToLibrary(library: QueueTag[], tag: QueueTag): QueueTag[] {
+  const [normalized] = normalizeTags([tag]);
+  if (!normalized) return library;
+  if (library.some((existing) => sameName(existing.name, normalized.name))) {
+    return library;
+  }
+  return [...library, normalized];
+}
+
+/** Deleting a tag: take it out of the library entirely. */
+export function removeTagFromLibrary(library: QueueTag[], name: string): QueueTag[] {
+  return library.filter((existing) => !sameName(existing.name, name));
+}
+
+/** Detach a tag from one video's tags. Deleting a tag applies this to every video. */
+export function removeTagByName(tags: QueueTag[], name: string): QueueTag[] {
+  return tags.filter((tag) => !sameName(tag.name, name));
+}
+
+/**
+ * Every tag worth offering in the picker: the library plus anything already applied to a
+ * video. The second source keeps tags from before the library existed.
+ */
+export function mergeTagSources(library: QueueTag[], used: QueueTag[]): QueueTag[] {
+  const seen = new Map<string, QueueTag>();
+  for (const tag of [...library, ...used]) {
+    const key = tag.name.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.set(key, tag);
+  }
+  return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function normalizeTags(tags: unknown): QueueTag[] {
   if (!Array.isArray(tags)) return [];
   const seen = new Set<string>();

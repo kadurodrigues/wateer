@@ -32,7 +32,7 @@ export function QueuePanel() {
     unwatched,
     watched,
     bookmarked,
-    allTags,
+    usedTags,
     currentId,
     setCurrent,
     removeItem,
@@ -57,14 +57,9 @@ export function QueuePanel() {
   const grabYRef = React.useRef(0);
   const lastYRef = React.useRef(0);
   const directionRef = React.useRef<DragDirection | null>(null);
-  const rectsRef = React.useRef<
-    Array<{ id: string; top: number; bottom: number }>
-  >([]);
+  const rectsRef = React.useRef<Array<{ id: string; top: number; bottom: number }>>([]);
 
-  const allItems = React.useMemo(
-    () => [...unwatched, ...watched],
-    [unwatched, watched],
-  );
+  const allItems = React.useMemo(() => [...unwatched, ...watched], [unwatched, watched]);
   const bookmarkedUnwatched = React.useMemo(() => {
     const items = bookmarked.filter((i) => !i.watched);
     if (tagFilter === ALL_TAGS_FILTER) return items;
@@ -76,14 +71,13 @@ export function QueuePanel() {
     return items.filter((i) => i.tags.some((tag) => tag.name === tagFilter));
   }, [bookmarked, tagFilter]);
   const clearableWatchedCount = watched.length;
-  const filteredBookmarkCount =
-    bookmarkedUnwatched.length + bookmarkedWatched.length;
+  const filteredBookmarkCount = bookmarkedUnwatched.length + bookmarkedWatched.length;
 
   React.useEffect(() => {
-    if (tagFilter !== ALL_TAGS_FILTER && !allTags.some((tag) => tag.name === tagFilter)) {
+    if (tagFilter !== ALL_TAGS_FILTER && !usedTags.some((tag) => tag.name === tagFilter)) {
       setTagFilter(ALL_TAGS_FILTER);
     }
-  }, [allTags, tagFilter]);
+  }, [usedTags, tagFilter]);
 
   const setIndicator = React.useCallback(
     (id: string | null, position: "before" | "after" | null) => {
@@ -102,9 +96,7 @@ export function QueuePanel() {
     setDraggingId(id);
     setIndicator(null, null);
 
-    const draggedNode = listRef.current?.querySelector<HTMLElement>(
-      `[data-queue-id="${id}"]`,
-    );
+    const draggedNode = listRef.current?.querySelector<HTMLElement>(`[data-queue-id="${id}"]`);
     if (draggedNode) {
       setCardHeight(draggedNode.getBoundingClientRect().height);
     }
@@ -140,9 +132,7 @@ export function QueuePanel() {
     });
     lastYRef.current = e.clientY;
 
-    const sectionIds = new Set(
-      (source.watched ? watched : unwatched).map((i) => i.id),
-    );
+    const sectionIds = new Set((source.watched ? watched : unwatched).map((i) => i.id));
     const rects = rectsRef.current.filter((r) => sectionIds.has(r.id));
     const next = resolveDropIndicator({
       y: e.clientY,
@@ -291,9 +281,7 @@ export function QueuePanel() {
               <ListVideo className="h-3.5 w-3.5" />
               Recent
               {unwatched.length > 0 && (
-                <span className="ml-0.5 text-[10px] text-muted-foreground">
-                  {unwatched.length}
-                </span>
+                <span className="ml-0.5 text-[10px] text-muted-foreground">{unwatched.length}</span>
               )}
             </TabsTrigger>
             <TabsTrigger value="bookmarks" className="h-10 flex-1 gap-1.5 py-2 text-xs">
@@ -353,14 +341,14 @@ export function QueuePanel() {
             onDragLeave={handleListDragLeave}
             onDrop={handleDrop}
           >
-            {allTags.length > 0 && (
+            {usedTags.length > 0 && (
               <Select value={tagFilter} onValueChange={setTagFilter}>
                 <SelectTrigger className="h-9 w-full bg-background text-xs shadow-none border-2 mt-2 mb-6 focus:ring-0 focus:ring-offset-0 data-[state=open]:ring-0">
                   <SelectValue placeholder="All tags" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ALL_TAGS_FILTER}>All tags</SelectItem>
-                  {allTags.map((tag) => (
+                  {usedTags.map((tag) => (
                     <SelectItem key={tag.name} value={tag.name}>
                       <span className="flex items-center gap-2">
                         <span
@@ -403,9 +391,7 @@ export function QueuePanel() {
 
             {bookmarked.length > 0 && filteredBookmarkCount === 0 && (
               <div className="py-12 text-center">
-                <p className="text-sm text-muted-foreground">
-                  No bookmarks with this tag.
-                </p>
+                <p className="text-sm text-muted-foreground">No bookmarks with this tag.</p>
               </div>
             )}
           </div>

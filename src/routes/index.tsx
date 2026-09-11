@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Bookmark, BookmarkCheck } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { AddVideoForm } from "@/components/add-video-form";
 import { QueueMobileDrawer } from "@/components/queue-mobile-drawer";
 import { QueuePanel } from "@/components/queue-panel";
@@ -29,7 +31,18 @@ export const Route = createFileRoute("/")({
 });
 
 function App() {
-  const { currentItem, loaded, finishVideo, allTags, updateTags, updatePlayback } = useQueue();
+  const {
+    currentItem,
+    loaded,
+    finishVideo,
+    allTags,
+    addTagToLibrary,
+    deleteTag,
+    countTagUsage,
+    updateTags,
+    updatePlayback,
+    toggleBookmark,
+  } = useQueue();
 
   if (!loaded) {
     return (
@@ -69,13 +82,38 @@ function App() {
                 <span className="text-border">|</span>
                 <span className="shrink-0">Added {formatRelativeDate(currentItem.addedAt)}</span>
               </div>
-              {currentItem.bookmarked && (
-                <VideoTagEditor
-                  tags={currentItem.tags}
-                  allTags={allTags}
-                  onChange={(tags) => updateTags(currentItem.id, tags)}
-                />
-              )}
+
+              {/* One control zone on the title's leading edge: bookmark, then tagging.
+                  Nested rhythm, so wrapping keeps the groups legible: 4px inside the
+                  title block, 8px inside the tag group, 16px between groups, 24px here. */}
+              <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={currentItem.bookmarked}
+                  onClick={() => toggleBookmark(currentItem.id)}
+                  className="gap-1.5 font-semibold"
+                >
+                  {currentItem.bookmarked ? (
+                    <BookmarkCheck className="fill-brand text-brand" />
+                  ) : (
+                    <Bookmark />
+                  )}
+                  {currentItem.bookmarked ? "Bookmarked" : "Bookmark"}
+                </Button>
+
+                {currentItem.bookmarked && (
+                  <VideoTagEditor
+                    tags={currentItem.tags}
+                    allTags={allTags}
+                    onChange={(tags) => updateTags(currentItem.id, tags)}
+                    onCreateTag={addTagToLibrary}
+                    onDeleteTag={deleteTag}
+                    countTagUsage={countTagUsage}
+                  />
+                )}
+              </div>
             </section>
           )}
         </main>

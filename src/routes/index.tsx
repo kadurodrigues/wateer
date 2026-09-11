@@ -1,14 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Bookmark, BookmarkCheck } from "lucide-react";
+import { Bookmark, BookmarkCheck, X } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AddVideoForm } from "@/components/add-video-form";
 import { QueueMobileDrawer } from "@/components/queue-mobile-drawer";
 import { QueuePanel } from "@/components/queue-panel";
 import { useQueue } from "@/components/queue-provider";
 import { VideoPlayer } from "@/components/video-player";
-import { VideoTagEditor } from "@/components/video-tag-editor";
 import { WateerLogo } from "@/components/wateer-logo";
+import { getTagColor } from "@/lib/tags";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -31,18 +34,8 @@ export const Route = createFileRoute("/")({
 });
 
 function App() {
-  const {
-    currentItem,
-    loaded,
-    finishVideo,
-    allTags,
-    addTagToLibrary,
-    deleteTag,
-    countTagUsage,
-    updateTags,
-    updatePlayback,
-    toggleBookmark,
-  } = useQueue();
+  const { currentItem, loaded, finishVideo, updatePlayback, toggleBookmark, updateTags } =
+    useQueue();
 
   if (!loaded) {
     return (
@@ -74,46 +67,71 @@ function App() {
 
           {currentItem && (
             <section className="px-6 pb-4 lg:pb-5">
-              <h1 className="text-xl font-bold tracking-tight text-foreground lg:text-2xl">
-                {currentItem.title}
-              </h1>
+              <div className="flex items-start gap-4">
+                <h1 className="min-w-0 flex-1 text-xl font-bold tracking-tight text-foreground lg:text-2xl">
+                  {currentItem.title}
+                </h1>
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        aria-pressed={currentItem.bookmarked}
+                        aria-label={
+                          currentItem.bookmarked ? "Remove from Bookmark" : "Add to Bookmark"
+                        }
+                        onClick={() => toggleBookmark(currentItem.id)}
+                        className="size-9 shrink-0 rounded-full"
+                      >
+                        {currentItem.bookmarked ? (
+                          <BookmarkCheck className="fill-brand text-brand" />
+                        ) : (
+                          <Bookmark />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{currentItem.bookmarked ? "Remove from Bookmark" : "Add to Bookmark"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
                 <span className="truncate">{currentItem.channelName ?? "Unknown channel"}</span>
                 <span className="text-border">|</span>
                 <span className="shrink-0">Added {formatRelativeDate(currentItem.addedAt)}</span>
               </div>
-
-              {/* One control zone on the title's leading edge: bookmark, then tagging.
-                  Nested rhythm, so wrapping keeps the groups legible: 4px inside the
-                  title block, 8px inside the tag group, 16px between groups, 24px here. */}
-              <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-pressed={currentItem.bookmarked}
-                  onClick={() => toggleBookmark(currentItem.id)}
-                  className="gap-1.5 font-semibold"
-                >
-                  {currentItem.bookmarked ? (
-                    <BookmarkCheck className="fill-brand text-brand" />
-                  ) : (
-                    <Bookmark />
-                  )}
-                  {currentItem.bookmarked ? "Bookmarked" : "Bookmark"}
-                </Button>
-
-                {currentItem.bookmarked && (
-                  <VideoTagEditor
-                    tags={currentItem.tags}
-                    allTags={allTags}
-                    onChange={(tags) => updateTags(currentItem.id, tags)}
-                    onCreateTag={addTagToLibrary}
-                    onDeleteTag={deleteTag}
-                    countTagUsage={countTagUsage}
-                  />
-                )}
-              </div>
+              {currentItem.bookmarked && currentItem.tags.length > 0 && (
+                <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2">
+                  {currentItem.tags.map((tag) => {
+                    const tagColor = getTagColor(tag.color);
+                    return (
+                      <Badge
+                        key={tag.name}
+                        variant="outline"
+                        className={cn("gap-1 pe-1 text-xs font-medium", tagColor.badge)}
+                      >
+                        {tag.name}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateTags(
+                              currentItem.id,
+                              currentItem.tags.filter((existing) => existing.name !== tag.name),
+                            )
+                          }
+                          className="rounded-sm p-0.5 opacity-70 transition-colors hover:bg-black/5 hover:opacity-100"
+                          aria-label={`Remove tag ${tag.name} from this video`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           )}
         </main>

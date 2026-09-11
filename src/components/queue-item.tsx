@@ -272,12 +272,12 @@ export function QueueItemCard({
                                 <Bookmark className="h-3.5 w-3.5" />
                               )}
                               <span className="sr-only">
-                                {item.bookmarked ? "Remove bookmark" : "Bookmark"}
+                                {item.bookmarked ? "Remove from Bookmark" : "Add to Bookmark"}
                               </span>
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>{item.bookmarked ? "Remove bookmark" : "Bookmark"}</p>
+                            <p>{item.bookmarked ? "Remove from Bookmark" : "Add to Bookmark"}</p>
                           </TooltipContent>
                         </Tooltip>
                       )}

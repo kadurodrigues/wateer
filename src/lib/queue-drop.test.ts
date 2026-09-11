@@ -1,15 +1,7 @@
-import {
-  resolveDragDirection,
-  resolveDropIndicator,
-  shiftYForDrop,
-} from "./queue-drop.ts";
+import { resolveDragDirection, resolveDropIndicator, shiftYForDrop } from "./queue-drop.ts";
 
 const B = { id: "b", top: 112, bottom: 212 };
-const rects = [
-  { id: "a", top: 0, bottom: 100 },
-  B,
-  { id: "c", top: 224, bottom: 324 },
-];
+const rects = [{ id: "a", top: 0, bottom: 100 }, B, { id: "c", top: 224, bottom: 324 }];
 
 function assertEqual(actual: unknown, expected: unknown, label: string) {
   const a = JSON.stringify(actual);

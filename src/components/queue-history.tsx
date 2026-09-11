@@ -20,12 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQueue } from "@/components/queue-provider";
 import { cn } from "@/lib/utils";
 
@@ -34,10 +29,7 @@ export function QueueHistory() {
   const [open, setOpen] = React.useState(false);
   const [addingId, setAddingId] = React.useState<string | null>(null);
 
-  const queueVideoIds = React.useMemo(
-    () => new Set(items.map((item) => item.videoId)),
-    [items],
-  );
+  const queueVideoIds = React.useMemo(() => new Set(items.map((item) => item.videoId)), [items]);
 
   function handleClear() {
     clearHistory();
@@ -69,9 +61,7 @@ export function QueueHistory() {
       <DialogContent className="flex max-h-[min(42rem,90vh)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b border-border px-6 py-4 text-left">
           <DialogTitle>History</DialogTitle>
-          <DialogDescription>
-            Videos you have added to the app.
-          </DialogDescription>
+          <DialogDescription>Videos you have added to the app.</DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="min-h-0 flex-1 [&>div]:max-h-[min(26rem,58vh)]">
@@ -86,9 +76,7 @@ export function QueueHistory() {
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="pl-2">Title</TableHead>
-                      <TableHead className="w-[7.5rem] whitespace-nowrap">
-                        Added At
-                      </TableHead>
+                      <TableHead className="w-[7.5rem] whitespace-nowrap">Added At</TableHead>
                       <TableHead className="w-14 pr-2 text-center">Action</TableHead>
                     </TableRow>
                   </TableHeader>

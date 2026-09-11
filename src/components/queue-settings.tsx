@@ -38,11 +38,7 @@ export function QueueSettings() {
           checked={autoPlayNext}
           onCheckedChange={setAutoPlayNext}
         />
-        <SettingsToggleRow
-          label="Dark Mode"
-          checked={darkMode}
-          onCheckedChange={setDarkMode}
-        />
+        <SettingsToggleRow label="Dark Mode" checked={darkMode} onCheckedChange={setDarkMode} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -67,12 +63,7 @@ function SettingsToggleRow({
       }}
     >
       <span className="text-sm font-medium text-foreground">{label}</span>
-      <Switch
-        checked={checked}
-        tabIndex={-1}
-        className="pointer-events-none"
-        aria-hidden="true"
-      />
+      <Switch checked={checked} tabIndex={-1} className="pointer-events-none" aria-hidden="true" />
     </DropdownMenuItem>
   );
 }

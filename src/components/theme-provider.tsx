@@ -28,10 +28,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const value = React.useMemo(
-    () => ({ darkMode, setDarkMode }),
-    [darkMode, setDarkMode],
-  );
+  const value = React.useMemo(() => ({ darkMode, setDarkMode }), [darkMode, setDarkMode]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

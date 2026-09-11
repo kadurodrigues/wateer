@@ -76,10 +76,7 @@ function distanceToRect(y: number, rect: DropRect): number {
 
 export const QUEUE_CARD_GAP_PX = 12;
 
-export function shiftYForDrop(
-  position: DropPosition,
-  cardHeight: number,
-): number {
+export function shiftYForDrop(position: DropPosition, cardHeight: number): number {
   const distance = cardHeight + QUEUE_CARD_GAP_PX;
   return position === "before" ? distance : -distance;
 }

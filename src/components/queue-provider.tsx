@@ -2,51 +2,33 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { fetchVideoDuration, fetchVideoMetadata } from "@/lib/youtube.functions";
-import { buildYouTubeEmbedUrl, buildYouTubeThumbnailUrl, extractYouTubeId } from "@/lib/youtube";
-import { reorderMatching } from "@/lib/queue-order";
+import { buildYouTubeThumbnailUrl, extractYouTubeId } from "@/lib/youtube";
 import {
-  addTagToLibrary as withTagInLibrary,
-  mergeTagSources,
-  normalizeTags,
-  removeTagByName,
-  removeTagFromLibrary,
-  type QueueTag,
-} from "@/lib/tags";
+  STORAGE_KEY,
+  parseQueueState,
+  serializeBackup,
+  serializeQueueState,
+} from "@/lib/queue-persistence";
+import {
+  initialQueueState,
+  isInQueue,
+  matchesSection,
+  queueReducer,
+  type HistoryEntry,
+  type ItemSnapshot,
+  type QueueAction,
+  type QueueItem,
+  type ReorderSection,
+} from "@/lib/queue-state";
+import { mergeTagSources, type QueueTag } from "@/lib/tags";
 
-export type QueueItem = {
-  id: string;
-  videoId: string;
-  url: string;
-  title: string | null;
-  channelName: string | null;
-  duration: number | null;
-  thumbnail: string;
-  tags: QueueTag[];
-  watched: boolean;
-  bookmarked: boolean;
-  inQueue: boolean;
-  addedAt: number;
-  playbackSeconds: number;
-};
-
-export type HistoryEntry = {
-  videoId: string;
-  url: string;
-  title: string | null;
-  addedAt: number;
-};
-
-type QueueState = {
-  items: QueueItem[];
-  currentId: string | null;
-};
+export type { HistoryEntry, QueueItem, ReorderSection } from "@/lib/queue-state";
 
 export type SidebarTab = "recent" | "bookmarks";
 
-export type ReorderSection =
-  "unwatched" | "watched" | "bookmarked-unwatched" | "bookmarked-watched";
-
-type QueueContextValue = QueueState & {
+type QueueContextValue = {
+  items: QueueItem[];
+  currentId: string | null;
   loaded: boolean;
   autoPlayNext: boolean;
   setAutoPlayNext: (value: boolean) => void;
@@ -81,8 +63,10 @@ type QueueContextValue = QueueState & {
   clearWatched: () => void;
   clearHistory: () => void;
   readdFromHistory: (videoId: string) => Promise<void>;
-  playNext: () => void;
-  playPrevious: () => void;
+  /** Everything Wateer stores, as a JSON backup file's contents. */
+  exportBackup: () => string;
+  /** Replace everything with a backup's contents. False if it isn't a Wateer backup. */
+  importBackup: (json: string) => boolean;
 };
 
 const QUEUE_CONTEXT_KEY = Symbol.for("watch-later.queue-context");
@@ -97,8 +81,6 @@ const QueueContext =
 
 contextRegistry[QUEUE_CONTEXT_KEY] = QueueContext;
 
-const STORAGE_KEY = "yt-queue-v1";
-
 function generateId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -106,152 +88,68 @@ function generateId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function isInQueue(item: QueueItem) {
-  return item.inQueue !== false;
+function snapshotsOf(items: QueueItem[], match: (item: QueueItem) => boolean): ItemSnapshot[] {
+  return items.flatMap((item, index) => (match(item) ? [{ item, index }] : []));
 }
 
-function matchesReorderSection(item: QueueItem, section: ReorderSection) {
-  switch (section) {
-    case "unwatched":
-      return !item.watched && !item.bookmarked && isInQueue(item);
-    case "watched":
-      return item.watched && !item.bookmarked && isInQueue(item);
-    case "bookmarked-unwatched":
-      return item.bookmarked && !item.watched;
-    case "bookmarked-watched":
-      return item.bookmarked && item.watched;
-  }
-}
-
-function normalizeHistory(entries: unknown): HistoryEntry[] {
-  if (!Array.isArray(entries)) return [];
-  const seen = new Set<string>();
-  const result: HistoryEntry[] = [];
-  for (const entry of entries) {
-    if (!entry || typeof entry !== "object") continue;
-    const videoId = String((entry as HistoryEntry).videoId ?? "").trim();
-    const url = String((entry as HistoryEntry).url ?? "").trim();
-    if (!videoId || !url || seen.has(videoId)) continue;
-    seen.add(videoId);
-    const titleRaw = (entry as HistoryEntry).title;
-    const title = typeof titleRaw === "string" && titleRaw.trim() ? titleRaw.trim() : null;
-    const addedAt =
-      typeof (entry as HistoryEntry).addedAt === "number"
-        ? (entry as HistoryEntry).addedAt
-        : Date.now();
-    result.push({ videoId, url, title, addedAt });
-  }
-  return result.sort((a, b) => b.addedAt - a.addedAt);
-}
-
-/** Merge queue items into history so existing Recent / Watched / Bookmarks appear. */
-function mergeHistoryWithItems(
-  existing: HistoryEntry[],
-  items: Array<Pick<QueueItem, "videoId" | "url" | "title" | "addedAt">>,
-): HistoryEntry[] {
-  const byId = new Map<string, HistoryEntry>();
-  for (const entry of existing) {
-    byId.set(entry.videoId, entry);
-  }
-  for (const item of items) {
-    const videoId = item.videoId?.trim();
-    const url = item.url?.trim();
-    if (!videoId || !url) continue;
-    const prev = byId.get(videoId);
-    if (!prev) {
-      byId.set(videoId, {
-        videoId,
-        url,
-        title: item.title ?? null,
-        addedAt: typeof item.addedAt === "number" ? item.addedAt : Date.now(),
-      });
-      continue;
-    }
-    if (!prev.title && item.title) {
-      byId.set(videoId, { ...prev, title: item.title });
-    }
-  }
-  return Array.from(byId.values()).sort((a, b) => b.addedAt - a.addedAt);
+function plural(count: number, one: string, many = `${one}s`) {
+  return `${count} ${count === 1 ? one : many}`;
 }
 
 export function QueueProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = React.useState<QueueState>({ items: [], currentId: null });
-  const [tagLibrary, setTagLibrary] = React.useState<QueueTag[]>([]);
-  const [autoPlayNext, setAutoPlayNext] = React.useState(false);
-  const [history, setHistory] = React.useState<HistoryEntry[]>([]);
-  const [historyBackfilled, setHistoryBackfilled] = React.useState(false);
+  const [state, dispatch] = React.useReducer(queueReducer, initialQueueState);
   const [sidebarTab, setSidebarTab] = React.useState<SidebarTab>("recent");
   const [loaded, setLoaded] = React.useState(false);
   const stateRef = React.useRef(state);
   stateRef.current = state;
-  const historyRef = React.useRef(history);
-  historyRef.current = history;
+  // Set when state arrives from another tab, so this tab doesn't echo it straight back.
+  const skipNextSaveRef = React.useRef(false);
 
   React.useEffect(() => {
     try {
-      const raw = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<QueueState> & {
-          autoPlayNext?: boolean;
-          history?: unknown;
-          historyBackfilled?: boolean;
-          tagLibrary?: unknown;
-        };
-        if (Array.isArray(parsed.items)) {
-          const items = parsed.items.map((item) => ({
-            ...item,
-            tags: normalizeTags(item.tags),
-            playbackSeconds:
-              typeof item.playbackSeconds === "number" && item.playbackSeconds > 0
-                ? item.playbackSeconds
-                : 0,
-          }));
-          const used = items.flatMap((item) => item.tags);
-          setTagLibrary(mergeTagSources(normalizeTags(parsed.tagLibrary), used));
-          setState({
-            items,
-            currentId: parsed.currentId ?? null,
-          });
-          const existingHistory = normalizeHistory(parsed.history);
-          setHistory(
-            parsed.historyBackfilled
-              ? existingHistory
-              : mergeHistoryWithItems(existingHistory, items),
-          );
-        } else {
-          setTagLibrary(normalizeTags(parsed.tagLibrary));
-          setHistory(normalizeHistory(parsed.history));
-        }
-        if (typeof parsed.autoPlayNext === "boolean") {
-          setAutoPlayNext(parsed.autoPlayNext);
-        }
-        setHistoryBackfilled(true);
-      } else {
-        setHistoryBackfilled(true);
-      }
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const saved = raw ? parseQueueState(raw) : null;
+      if (saved) dispatch({ type: "replace", state: saved });
     } catch {
-      // ignore corrupt storage
+      // ignore unreadable storage
     }
     setLoaded(true);
   }, []);
 
   React.useEffect(() => {
-    if (!loaded || typeof window === "undefined") return;
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ ...state, autoPlayNext, history, historyBackfilled, tagLibrary }),
-    );
-  }, [state, autoPlayNext, history, historyBackfilled, tagLibrary, loaded]);
+    if (!loaded) return;
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    try {
+      window.localStorage.setItem(STORAGE_KEY, serializeQueueState(state));
+    } catch {
+      // ignore quota / private-mode failures
+    }
+  }, [state, loaded]);
+
+  // Without this, two open tabs each save their own copy and the last write wins.
+  React.useEffect(() => {
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== STORAGE_KEY || event.newValue == null) return;
+      const incoming = parseQueueState(event.newValue);
+      if (!incoming) return;
+      skipNextSaveRef.current = true;
+      dispatch({ type: "sync", state: incoming });
+    }
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  const { items, currentId, tagLibrary, history, autoPlayNext } = state;
 
   const unwatched = React.useMemo(
-    () => state.items.filter((i) => !i.watched && !i.bookmarked && isInQueue(i)),
-    [state.items],
+    () => items.filter((i) => matchesSection(i, "unwatched")),
+    [items],
   );
-  const watched = React.useMemo(
-    () => state.items.filter((i) => i.watched && !i.bookmarked && isInQueue(i)),
-    [state.items],
-  );
-  const bookmarked = React.useMemo(() => state.items.filter((i) => i.bookmarked), [state.items]);
+  const watched = React.useMemo(() => items.filter((i) => matchesSection(i, "watched")), [items]);
+  const bookmarked = React.useMemo(() => items.filter((i) => i.bookmarked), [items]);
   const usedTags = React.useMemo(() => {
     const seen = new Map<string, QueueTag>();
     for (const item of bookmarked) {
@@ -269,33 +167,9 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     [tagLibrary, usedTags],
   );
 
-  const addTagToLibrary = React.useCallback((tag: QueueTag) => {
-    setTagLibrary((prev) => withTagInLibrary(prev, tag));
-  }, []);
-
-  const countTagUsage = React.useCallback(
-    (name: string) =>
-      stateRef.current.items.filter((i) =>
-        i.tags.some((tag) => tag.name.toLowerCase() === name.trim().toLowerCase()),
-      ).length,
-    [],
-  );
-
-  /** Deleting a tag removes it from the library and detaches it from every video. */
-  const deleteTag = React.useCallback((name: string) => {
-    setTagLibrary((prev) => removeTagFromLibrary(prev, name));
-    setState((prev) => ({
-      ...prev,
-      items: prev.items.map((i) =>
-        i.tags.some((tag) => tag.name.toLowerCase() === name.trim().toLowerCase())
-          ? { ...i, tags: removeTagByName(i.tags, name) }
-          : i,
-      ),
-    }));
-  }, []);
   const currentItem = React.useMemo(
-    () => state.items.find((i) => i.id === state.currentId) ?? null,
-    [state.items, state.currentId],
+    () => items.find((i) => i.id === currentId) ?? null,
+    [items, currentId],
   );
 
   // Follow the video that starts playing, but never yank the tab out from under
@@ -307,330 +181,196 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     setSidebarTab(currentItem.bookmarked ? "bookmarks" : "recent");
   }, [currentItem]);
 
-  const addItem = React.useCallback(async (url: string) => {
-    const videoId = extractYouTubeId(url);
-    if (!videoId) {
-      toast.error("That doesn't look like a valid YouTube URL.");
-      return;
-    }
-
-    const alreadyExists = stateRef.current.items.some((i) => i.videoId === videoId);
-    if (alreadyExists) {
-      toast.error("This video is already in your queue.");
-      return;
-    }
-
-    setState((prev) => {
-      if (prev.items.some((i) => i.videoId === videoId)) {
-        return prev;
-      }
-      const newItem: QueueItem = {
-        id: generateId(),
-        videoId,
-        url,
-        title: null,
-        channelName: null,
-        duration: null,
-        thumbnail: buildYouTubeThumbnailUrl(videoId),
-        tags: [],
-        watched: false,
-        bookmarked: false,
-        inQueue: true,
-        addedAt: Date.now(),
-        playbackSeconds: 0,
-      };
-      return {
-        items: [...prev.items, newItem],
-        currentId: newItem.id,
-      };
-    });
-
-    if (!historyRef.current.some((entry) => entry.videoId === videoId)) {
-      setHistory((prev) => [{ videoId, url, title: null, addedAt: Date.now() }, ...prev]);
-    }
-
-    try {
-      const [{ title, channelName }, { duration }] = await Promise.all([
-        fetchVideoMetadata({ data: url }),
-        fetchVideoDuration({ data: url }),
-      ]);
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.map((i) =>
-          extractYouTubeId(i.url) === videoId
-            ? {
-                ...i,
-                title: title || i.title,
-                channelName: channelName || i.channelName,
-                duration: duration ?? i.duration,
-              }
-            : i,
-        ),
-      }));
-      if (title) {
-        setHistory((prev) =>
-          prev.map((entry) =>
-            entry.videoId === videoId ? { ...entry, title: title || entry.title } : entry,
-          ),
-        );
-      }
-    } catch {
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.map((i) =>
-          extractYouTubeId(i.url) === videoId ? { ...i, title: i.title ?? "Untitled video" } : i,
-        ),
-      }));
-      setHistory((prev) =>
-        prev.map((entry) =>
-          entry.videoId === videoId ? { ...entry, title: entry.title ?? "Untitled video" } : entry,
-        ),
-      );
-    }
-  }, []);
-
-  const removeItem = React.useCallback((id: string) => {
-    setState((prev) => {
-      const nextItems = prev.items.filter((i) => i.id !== id);
-      let nextCurrent = prev.currentId;
-      if (prev.currentId === id) {
-        const remaining = nextItems.filter((i) => !i.watched);
-        nextCurrent = remaining[0]?.id ?? nextItems[0]?.id ?? null;
-      }
-      return { items: nextItems, currentId: nextCurrent };
-    });
-  }, []);
-
-  const setCurrent = React.useCallback((id: string) => {
-    setState((prev) => ({ ...prev, currentId: id }));
-  }, []);
-
-  const toggleWatched = React.useCallback((id: string) => {
-    setState((prev) => {
-      const item = prev.items.find((i) => i.id === id);
-      if (!item) return prev;
-      const nextWatched = !item.watched;
-
-      const nextItems = prev.items.map((i) => {
-        if (i.id !== id) return i;
-        if (!nextWatched) {
-          // Unwatching a cleared bookmark (inQueue: false) keeps it in Bookmarks
-          // only. Recent never includes bookmarked videos.
-          return { ...i, watched: false, inQueue: i.bookmarked ? i.inQueue : true };
-        }
-        return { ...i, watched: true, playbackSeconds: 0 };
-      });
-
-      const active = nextItems.filter(isInQueue);
-      const archived = nextItems.filter((i) => !isInQueue(i));
-      const activeUnwatched = active.filter((i) => !i.watched);
-      const activeWatched = active.filter((i) => i.watched);
-      const archivedUnwatched = archived.filter((i) => !i.watched);
-      const archivedWatched = archived.filter((i) => i.watched);
-
-      let nextCurrent = prev.currentId;
-      if (nextWatched && prev.currentId === id) {
-        nextCurrent = activeUnwatched[0]?.id ?? null;
-      }
-
-      return {
-        items: [...activeUnwatched, ...activeWatched, ...archivedUnwatched, ...archivedWatched],
-        currentId: nextCurrent,
-      };
-    });
-  }, []);
-
-  const toggleBookmark = React.useCallback((id: string) => {
-    const item = stateRef.current.items.find((i) => i.id === id);
-    if (!item) return;
-
-    setState((prev) => {
-      const existing = prev.items.find((i) => i.id === id);
-      if (!existing) return prev;
-      if (existing.bookmarked && !isInQueue(existing)) {
-        const nextItems = prev.items.filter((i) => i.id !== id);
-        const nextCurrent =
-          prev.currentId === id
-            ? (nextItems.find((i) => !i.watched && !i.bookmarked && isInQueue(i))?.id ??
-              nextItems[0]?.id ??
-              null)
-            : prev.currentId;
-        return { items: nextItems, currentId: nextCurrent };
-      }
-      return {
-        ...prev,
-        items: prev.items.map((i) => (i.id === id ? { ...i, bookmarked: !i.bookmarked } : i)),
-      };
-    });
-  }, []);
-
-  const reorder = React.useCallback(
-    (
-      sourceId: string,
-      targetId: string,
-      section: ReorderSection,
-      position?: "before" | "after",
-    ) => {
-      if (sourceId === targetId) return;
-      setState((prev) => {
-        const nextItems = reorderMatching(
-          prev.items,
-          (item) => matchesReorderSection(item, section),
-          sourceId,
-          targetId,
-          position,
-        );
-        if (!nextItems) return prev;
-        return { ...prev, items: nextItems };
+  /** Run a destructive action and offer to put the affected items back. */
+  const dispatchUndoable = React.useCallback(
+    (action: QueueAction, snapshots: ItemSnapshot[], message: string) => {
+      const before = stateRef.current;
+      const after = queueReducer(before, action);
+      dispatch(action);
+      if (snapshots.length === 0) return;
+      toast(message, {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            dispatch({
+              type: "restore-items",
+              snapshots,
+              currentId: before.currentId,
+              currentIdAfter: after.currentId,
+            }),
+        },
       });
     },
     [],
   );
 
-  const updateTags = React.useCallback((id: string, tags: QueueTag[]) => {
-    const normalized = normalizeTags(tags);
-    setState((prev) => ({
-      ...prev,
-      items: prev.items.map((i) => (i.id === id ? { ...i, tags: normalized } : i)),
-    }));
-  }, []);
-
-  const updatePlayback = React.useCallback((id: string, seconds: number) => {
-    const nextSeconds = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
-    setState((prev) => {
-      const item = prev.items.find((i) => i.id === id);
-      if (!item || item.playbackSeconds === nextSeconds) return prev;
-      return {
-        ...prev,
-        items: prev.items.map((i) => (i.id === id ? { ...i, playbackSeconds: nextSeconds } : i)),
-      };
-    });
-  }, []);
-
-  const clearWatched = React.useCallback(() => {
-    setState((prev) => {
-      const nextItems = prev.items
-        .filter((i) => !i.watched || i.bookmarked)
-        .map((i) => (i.watched && i.bookmarked ? { ...i, inQueue: false } : i));
-      const nextCurrent =
-        nextItems.find((i) => i.id === prev.currentId)?.id ?? nextItems[0]?.id ?? null;
-      return { items: nextItems, currentId: nextCurrent };
-    });
-  }, []);
-
-  const clearHistory = React.useCallback(() => {
-    setHistory([]);
-  }, []);
-
-  const readdFromHistory = React.useCallback(async (videoId: string) => {
-    const entry = historyRef.current.find((e) => e.videoId === videoId);
-    if (!entry) return;
-
-    if (stateRef.current.items.some((i) => i.videoId === videoId)) {
-      toast.error("This video is already in your queue.");
-      return;
-    }
-
-    setState((prev) => {
-      if (prev.items.some((i) => i.videoId === videoId)) return prev;
-      const newItem: QueueItem = {
-        id: generateId(),
-        videoId: entry.videoId,
-        url: entry.url,
-        title: entry.title,
-        channelName: null,
-        duration: null,
-        thumbnail: buildYouTubeThumbnailUrl(entry.videoId),
-        tags: [],
-        watched: false,
-        bookmarked: false,
-        inQueue: true,
-        addedAt: Date.now(),
-        playbackSeconds: 0,
-      };
-      return {
-        items: [...prev.items, newItem],
-        currentId: newItem.id,
-      };
-    });
-
+  const loadDetails = React.useCallback(async (videoId: string, url: string) => {
     try {
       const [{ title, channelName }, { duration }] = await Promise.all([
-        fetchVideoMetadata({ data: entry.url }),
-        fetchVideoDuration({ data: entry.url }),
+        fetchVideoMetadata({ data: url }),
+        fetchVideoDuration({ data: url }),
       ]);
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.map((i) =>
-          i.videoId === videoId
-            ? {
-                ...i,
-                title: title || i.title,
-                channelName: channelName || i.channelName,
-                duration: duration ?? i.duration,
-              }
-            : i,
-        ),
-      }));
-      if (title) {
-        setHistory((prev) =>
-          prev.map((e) => (e.videoId === videoId ? { ...e, title: title || e.title } : e)),
-        );
-      }
+      dispatch({ type: "details-loaded", videoId, details: { title, channelName, duration } });
     } catch {
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.map((i) =>
-          i.videoId === videoId ? { ...i, title: i.title ?? "Untitled video" } : i,
-        ),
-      }));
+      dispatch({ type: "details-failed", videoId });
     }
   }, []);
 
-  const finishVideo = React.useCallback(
-    (id: string) => {
-      setState((prev) => {
-        const item = prev.items.find((i) => i.id === id);
-        if (!item || item.watched) {
-          return prev;
-        }
-        const nextItems = prev.items.map((i) =>
-          i.id === id ? { ...i, watched: true, playbackSeconds: 0 } : i,
-        );
-        // Move the finished video to the end (watched section).
-        const nextUnwatched = nextItems.filter((i) => !i.watched);
-        const nextWatchedList = nextItems.filter((i) => i.watched);
-        let nextCurrent = prev.currentId;
-        if (autoPlayNext && prev.currentId === id) {
-          nextCurrent = nextUnwatched[0]?.id ?? nextWatchedList[0]?.id ?? null;
-        }
-        return { items: [...nextUnwatched, ...nextWatchedList], currentId: nextCurrent };
+  const enqueue = React.useCallback(
+    async (videoId: string, url: string, title: string | null) => {
+      if (stateRef.current.items.some((i) => i.videoId === videoId)) {
+        toast.error("This video is already in your queue.");
+        return;
+      }
+      dispatch({
+        type: "add",
+        item: {
+          id: generateId(),
+          videoId,
+          url,
+          title,
+          channelName: null,
+          duration: null,
+          thumbnail: buildYouTubeThumbnailUrl(videoId),
+          tags: [],
+          watched: false,
+          bookmarked: false,
+          inQueue: true,
+          addedAt: Date.now(),
+          playbackSeconds: 0,
+        },
       });
+      await loadDetails(videoId, url);
     },
-    [autoPlayNext],
+    [loadDetails],
   );
 
-  const playNext = React.useCallback(() => {
-    setState((prev) => {
-      const index = prev.items.findIndex((i) => i.id === prev.currentId);
-      const next = prev.items[index + 1];
-      if (!next) return prev;
-      return { ...prev, currentId: next.id };
+  const addItem = React.useCallback(
+    async (url: string) => {
+      const videoId = extractYouTubeId(url);
+      if (!videoId) {
+        toast.error("That doesn't look like a valid YouTube URL.");
+        return;
+      }
+      await enqueue(videoId, url, null);
+    },
+    [enqueue],
+  );
+
+  const readdFromHistory = React.useCallback(
+    async (videoId: string) => {
+      const entry = stateRef.current.history.find((e) => e.videoId === videoId);
+      if (!entry) return;
+      await enqueue(entry.videoId, entry.url, entry.title);
+    },
+    [enqueue],
+  );
+
+  const removeItem = React.useCallback(
+    (id: string) => {
+      const snapshots = snapshotsOf(stateRef.current.items, (i) => i.id === id);
+      const title = snapshots[0]?.item.title;
+      dispatchUndoable(
+        { type: "remove", id },
+        snapshots,
+        title ? `Removed “${title}”` : "Removed video",
+      );
+    },
+    [dispatchUndoable],
+  );
+
+  const toggleBookmark = React.useCallback(
+    (id: string) => {
+      // Un-bookmarking a video already cleared out of the queue deletes it outright.
+      const snapshots = snapshotsOf(
+        stateRef.current.items,
+        (i) => i.id === id && i.bookmarked && !isInQueue(i),
+      );
+      dispatchUndoable({ type: "toggle-bookmark", id }, snapshots, "Bookmark removed");
+    },
+    [dispatchUndoable],
+  );
+
+  const clearWatched = React.useCallback(() => {
+    const snapshots = snapshotsOf(
+      stateRef.current.items,
+      (i) => i.watched && (!i.bookmarked || isInQueue(i)),
+    );
+    dispatchUndoable(
+      { type: "clear-watched" },
+      snapshots,
+      `Cleared ${plural(snapshots.length, "watched video")}`,
+    );
+  }, [dispatchUndoable]);
+
+  const clearHistory = React.useCallback(() => {
+    const entries = stateRef.current.history;
+    dispatch({ type: "clear-history" });
+    if (entries.length === 0) return;
+    toast(`Cleared ${plural(entries.length, "history entry", "history entries")}`, {
+      action: {
+        label: "Undo",
+        onClick: () => dispatch({ type: "restore-history", entries }),
+      },
     });
   }, []);
 
-  const playPrevious = React.useCallback(() => {
-    setState((prev) => {
-      const index = prev.items.findIndex((i) => i.id === prev.currentId);
-      const previous = prev.items[index - 1];
-      if (!previous) return prev;
-      return { ...prev, currentId: previous.id };
+  const exportBackup = React.useCallback(() => serializeBackup(stateRef.current), []);
+
+  const importBackup = React.useCallback((json: string) => {
+    const incoming = parseQueueState(json);
+    if (!incoming) return false;
+    const before = stateRef.current;
+    dispatch({ type: "replace", state: incoming });
+    toast(`Imported ${plural(incoming.items.length, "video")}`, {
+      action: {
+        label: "Undo",
+        onClick: () => dispatch({ type: "replace", state: before }),
+      },
     });
+    return true;
+  }, []);
+
+  const setAutoPlayNext = React.useCallback(
+    (value: boolean) => dispatch({ type: "set-auto-play", value }),
+    [],
+  );
+  const finishVideo = React.useCallback((id: string) => dispatch({ type: "finish", id }), []);
+  const setCurrent = React.useCallback((id: string) => dispatch({ type: "set-current", id }), []);
+  const toggleWatched = React.useCallback(
+    (id: string) => dispatch({ type: "toggle-watched", id }),
+    [],
+  );
+  const reorder = React.useCallback(
+    (sourceId: string, targetId: string, section: ReorderSection, position?: "before" | "after") =>
+      dispatch({ type: "reorder", sourceId, targetId, section, position }),
+    [],
+  );
+  const updateTags = React.useCallback(
+    (id: string, tags: QueueTag[]) => dispatch({ type: "update-tags", id, tags }),
+    [],
+  );
+  const updatePlayback = React.useCallback(
+    (id: string, seconds: number) => dispatch({ type: "update-playback", id, seconds }),
+    [],
+  );
+  const addTagToLibrary = React.useCallback(
+    (tag: QueueTag) => dispatch({ type: "create-tag", tag }),
+    [],
+  );
+  /** Deleting a tag removes it from the library and detaches it from every video. */
+  const deleteTag = React.useCallback((name: string) => dispatch({ type: "delete-tag", name }), []);
+  const countTagUsage = React.useCallback((name: string) => {
+    const key = name.trim().toLowerCase();
+    return stateRef.current.items.filter((i) =>
+      i.tags.some((tag) => tag.name.toLowerCase() === key),
+    ).length;
   }, []);
 
   const value = React.useMemo(
     () => ({
-      ...state,
+      items,
+      currentId,
       loaded,
       autoPlayNext,
       setAutoPlayNext,
@@ -658,11 +398,12 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       clearWatched,
       clearHistory,
       readdFromHistory,
-      playNext,
-      playPrevious,
+      exportBackup,
+      importBackup,
     }),
     [
-      state,
+      items,
+      currentId,
       loaded,
       autoPlayNext,
       setAutoPlayNext,
@@ -690,8 +431,8 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       clearWatched,
       clearHistory,
       readdFromHistory,
-      playNext,
-      playPrevious,
+      exportBackup,
+      importBackup,
     ],
   );
 

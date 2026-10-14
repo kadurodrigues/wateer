@@ -27,6 +27,11 @@ import { cn } from "@/lib/utils";
 
 const ALL_TAGS_FILTER = "__all__";
 
+function hasTag(item: QueueItem, name: string) {
+  const key = name.toLowerCase();
+  return item.tags.some((tag) => tag.name.toLowerCase() === key);
+}
+
 export function QueuePanel() {
   const {
     unwatched,
@@ -63,18 +68,21 @@ export function QueuePanel() {
   const bookmarkedUnwatched = React.useMemo(() => {
     const items = bookmarked.filter((i) => !i.watched);
     if (tagFilter === ALL_TAGS_FILTER) return items;
-    return items.filter((i) => i.tags.some((tag) => tag.name === tagFilter));
+    return items.filter((i) => hasTag(i, tagFilter));
   }, [bookmarked, tagFilter]);
   const bookmarkedWatched = React.useMemo(() => {
     const items = bookmarked.filter((i) => i.watched);
     if (tagFilter === ALL_TAGS_FILTER) return items;
-    return items.filter((i) => i.tags.some((tag) => tag.name === tagFilter));
+    return items.filter((i) => hasTag(i, tagFilter));
   }, [bookmarked, tagFilter]);
   const clearableWatchedCount = watched.length;
   const filteredBookmarkCount = bookmarkedUnwatched.length + bookmarkedWatched.length;
 
   React.useEffect(() => {
-    if (tagFilter !== ALL_TAGS_FILTER && !usedTags.some((tag) => tag.name === tagFilter)) {
+    if (
+      tagFilter !== ALL_TAGS_FILTER &&
+      !usedTags.some((tag) => tag.name.toLowerCase() === tagFilter.toLowerCase())
+    ) {
       setTagFilter(ALL_TAGS_FILTER);
     }
   }, [usedTags, tagFilter]);

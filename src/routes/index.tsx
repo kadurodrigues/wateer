@@ -8,8 +8,10 @@ import { AddVideoForm } from "@/components/add-video-form";
 import { QueueMobileDrawer } from "@/components/queue-mobile-drawer";
 import { QueuePanel } from "@/components/queue-panel";
 import { useQueue } from "@/components/queue-provider";
+import { VideoComments } from "@/components/video-comments";
 import { VideoPlayer } from "@/components/video-player";
 import { WateerLogo } from "@/components/wateer-logo";
+import { formatRelativeDate } from "@/lib/format";
 import { getTagColor } from "@/lib/tags";
 import { cn } from "@/lib/utils";
 
@@ -48,7 +50,7 @@ function App() {
   return (
     <div className="flex min-h-screen justify-center bg-muted">
       <div className="mx-auto flex h-screen w-full max-w-[1200px] flex-col lg:flex-row lg:p-4">
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-none bg-background shadow-xl lg:rounded-3xl">
+        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto rounded-none bg-background shadow-xl lg:rounded-3xl">
           <header className="border-b border-border p-6">
             {/* One gap-3 rhythm across logo → input → button. */}
             <div className="flex max-w-3xl items-center gap-3">
@@ -66,7 +68,7 @@ function App() {
           />
 
           {currentItem && (
-            <section className="px-6 pb-4 lg:pb-5">
+            <section className="flex min-h-0 flex-1 flex-col px-6 pb-4 lg:pb-5">
               <div className="flex items-start gap-4">
                 <h1 className="min-w-0 flex-1 text-xl font-bold tracking-tight text-foreground lg:text-2xl">
                   {currentItem.title}
@@ -132,6 +134,11 @@ function App() {
                   })}
                 </div>
               )}
+              <VideoComments
+                key={currentItem.videoId}
+                videoId={currentItem.videoId}
+                commentCount={currentItem.commentCount}
+              />
             </section>
           )}
         </main>
@@ -148,19 +155,4 @@ function App() {
 
 function Index() {
   return <App />;
-}
-
-function formatRelativeDate(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (seconds < 60) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 30) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString();
 }

@@ -14,6 +14,7 @@ const sample: QueueState = {
       title: "Song",
       channelName: "Channel",
       duration: 212,
+      commentCount: 1500,
       thumbnail: "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
       tags: [{ name: "Music", color: "blue" }],
       watched: false,

@@ -16,6 +16,7 @@ function item(id: string, overrides: Partial<QueueItem> = {}): QueueItem {
     title: `Video ${id}`,
     channelName: null,
     duration: null,
+    commentCount: null,
     thumbnail: "",
     tags: [],
     watched: false,
@@ -195,6 +196,23 @@ describe("history", () => {
     expect(queueReducer(cleared, { type: "restore-history", entries: s.history }).history).toEqual(
       s.history,
     );
+  });
+
+  test("details keep a known comment count when a later lookup has none", () => {
+    const details = { title: "T", channelName: "C", duration: 60 };
+    let s = queueReducer(initialQueueState, { type: "add", item: item("a") });
+    s = queueReducer(s, {
+      type: "details-loaded",
+      videoId: "vid-a",
+      details: { ...details, commentCount: 12 },
+    });
+    expect(s.items[0]?.commentCount).toBe(12);
+    s = queueReducer(s, {
+      type: "details-loaded",
+      videoId: "vid-a",
+      details: { ...details, commentCount: null },
+    });
+    expect(s.items[0]?.commentCount).toBe(12);
   });
 
   test("a failed lookup names the video in both the queue and history", () => {

@@ -14,6 +14,8 @@ export type QueueItem = {
   title: string | null;
   channelName: string | null;
   duration: number | null;
+  /** As of when the video was added; null until known, or if comments are off. */
+  commentCount: number | null;
   thumbnail: string;
   tags: QueueTag[];
   watched: boolean;
@@ -48,6 +50,7 @@ export type VideoDetails = {
   title: string;
   channelName: string;
   duration: number | null;
+  commentCount: number | null;
 };
 
 export type QueueAction =
@@ -190,6 +193,7 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
                 title: details.title || i.title,
                 channelName: details.channelName || i.channelName,
                 duration: details.duration ?? i.duration,
+                commentCount: details.commentCount ?? i.commentCount,
               }
             : i,
         ),

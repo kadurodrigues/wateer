@@ -28,6 +28,7 @@ function normalizeItem(raw: unknown, now: number): QueueItem | null {
   if (!id || !videoId) return null;
   const playback = item["playbackSeconds"];
   const duration = item["duration"];
+  const commentCount = item["commentCount"];
   const addedAt = item["addedAt"];
   return {
     id,
@@ -36,6 +37,7 @@ function normalizeItem(raw: unknown, now: number): QueueItem | null {
     title: asString(item["title"]),
     channelName: asString(item["channelName"]),
     duration: typeof duration === "number" && duration > 0 ? duration : null,
+    commentCount: typeof commentCount === "number" && commentCount >= 0 ? commentCount : null,
     thumbnail: asString(item["thumbnail"]) ?? buildYouTubeThumbnailUrl(videoId),
     tags: normalizeTags(item["tags"]),
     watched: item["watched"] === true,

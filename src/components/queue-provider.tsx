@@ -1,7 +1,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { fetchVideoDuration, fetchVideoMetadata } from "@/lib/youtube.functions";
+import { fetchVideoMetadata, fetchVideoStats } from "@/lib/youtube.functions";
 import { buildYouTubeThumbnailUrl, extractYouTubeId } from "@/lib/youtube";
 import {
   STORAGE_KEY,
@@ -206,15 +206,28 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
 
   const loadDetails = React.useCallback(async (videoId: string, url: string) => {
     try {
-      const [{ title, channelName }, { duration }] = await Promise.all([
+      const [{ title, channelName }, { duration, commentCount }] = await Promise.all([
         fetchVideoMetadata({ data: url }),
-        fetchVideoDuration({ data: url }),
+        fetchVideoStats({ data: url }),
       ]);
-      dispatch({ type: "details-loaded", videoId, details: { title, channelName, duration } });
+      dispatch({
+        type: "details-loaded",
+        videoId,
+        details: { title, channelName, duration, commentCount },
+      });
     } catch {
       dispatch({ type: "details-failed", videoId });
     }
   }, []);
+
+  // Videos added before comment counts were stored pick theirs up the first time they play.
+  const backfilledIdsRef = React.useRef(new Set<string>());
+  React.useEffect(() => {
+    if (!currentItem || currentItem.commentCount !== null) return;
+    if (backfilledIdsRef.current.has(currentItem.id)) return;
+    backfilledIdsRef.current.add(currentItem.id);
+    void loadDetails(currentItem.videoId, currentItem.url);
+  }, [currentItem, loadDetails]);
 
   const enqueue = React.useCallback(
     async (videoId: string, url: string, title: string | null) => {
@@ -231,6 +244,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
           title,
           channelName: null,
           duration: null,
+          commentCount: null,
           thumbnail: buildYouTubeThumbnailUrl(videoId),
           tags: [],
           watched: false,

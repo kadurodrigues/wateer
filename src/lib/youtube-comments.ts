@@ -13,7 +13,14 @@ export type VideoComment = {
   edited: boolean;
 };
 
-export type CommentsUnavailableReason = "no-api-key" | "disabled" | "not-found" | "quota" | "error";
+export type CommentsUnavailableReason =
+  | "no-api-key"
+  | "disabled"
+  | "not-found"
+  | "quota"
+  /** Turned away by this server's own rate limit, before asking YouTube. */
+  | "busy"
+  | "error";
 
 export type CommentsPage =
   | { status: "ok"; comments: VideoComment[]; nextPageToken: string | null }

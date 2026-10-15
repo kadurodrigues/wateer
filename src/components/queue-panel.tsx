@@ -350,7 +350,7 @@ export function QueuePanel() {
     );
   }
 
-  const tabCount = sidebarTab === "recent" ? unwatched.length : bookmarked.length;
+  const tabCount = sidebarTab === "queue" ? unwatched.length : bookmarked.length;
 
   return (
     <div className="relative flex h-full min-w-0 flex-col bg-background">
@@ -360,8 +360,12 @@ export function QueuePanel() {
       <div className="border-b border-border p-6 pb-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 font-bold tracking-tight text-foreground">
-            <ListVideo className="h-5 w-5" />
-            Up Next
+            {sidebarTab === "queue" ? (
+              <ListVideo className="h-5 w-5" />
+            ) : (
+              <Bookmark className="h-5 w-5" />
+            )}
+            {sidebarTab === "queue" ? "Queue" : "Bookmarks"}
           </h2>
           <div className="flex items-center gap-3">
             <span className="rounded-md bg-muted px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -380,9 +384,9 @@ export function QueuePanel() {
           className="mt-3"
         >
           <TabsList className="h-auto w-full rounded-xl p-1.5">
-            <TabsTrigger value="recent" className="h-10 flex-1 gap-1.5 py-2 text-xs">
+            <TabsTrigger value="queue" className="h-10 flex-1 gap-1.5 py-2 text-xs">
               <ListVideo className="h-3.5 w-3.5" />
-              Recent
+              Queue
               {unwatched.length > 0 && (
                 <span className="ml-0.5 text-[10px] text-muted-foreground">{unwatched.length}</span>
               )}
@@ -401,11 +405,11 @@ export function QueuePanel() {
       </div>
 
       <ScrollArea className="min-w-0 flex-1 px-6 py-4">
-        {sidebarTab === "recent" ? (
+        {sidebarTab === "queue" ? (
           <div
             ref={listRef}
             role="list"
-            aria-label="Up next"
+            aria-label="Queue"
             className="min-w-0 space-y-3"
             onDragOver={handleListDragOver}
             onDragLeave={handleListDragLeave}
@@ -501,7 +505,7 @@ export function QueuePanel() {
         )}
       </ScrollArea>
 
-      {sidebarTab === "recent" && (
+      {sidebarTab === "queue" && (
         <div className="flex items-center gap-2 border-t border-border p-6">
           <Button
             variant="brand"

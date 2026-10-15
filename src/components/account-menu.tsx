@@ -3,6 +3,7 @@ import {
   Cloud,
   CloudOff,
   Download,
+  History,
   LogIn,
   LogOut,
   RefreshCw,
@@ -24,15 +25,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { useAuth, type AccountProfile } from "@/components/auth-provider";
+import { QueueHistoryDialog } from "@/components/queue-history";
 import { useQueue } from "@/components/queue-provider";
 import { useTheme } from "@/components/theme-provider";
 import type { SyncStatus } from "@/lib/sync/engine";
 import { cn } from "@/lib/utils";
 
 /**
- * The account and settings menu in the top-right corner: the avatar when signed in,
- * a person icon otherwise. Settings live here so they're reachable on a phone
- * without opening the queue drawer.
+ * The account and settings menu in the queue panel's header: the avatar when signed
+ * in, a person icon otherwise. Settings, backups and history live here.
  */
 export function AccountMenu({ className }: { className?: string }) {
   const { autoPlayNext, setAutoPlayNext, exportBackup, importBackup, syncStatus } = useQueue();
@@ -40,6 +41,7 @@ export function AccountMenu({ className }: { className?: string }) {
   const { status, profile, signInWithGoogle, signOut } = useAuth();
   // Outside the menu content, which unmounts as soon as the menu closes.
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [historyOpen, setHistoryOpen] = React.useState(false);
 
   function downloadBackup() {
     const blob = new Blob([exportBackup()], { type: "application/json" });
@@ -69,6 +71,7 @@ export function AccountMenu({ className }: { className?: string }) {
         className="hidden"
         onChange={(event) => void handleFile(event)}
       />
+      <QueueHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -76,7 +79,7 @@ export function AccountMenu({ className }: { className?: string }) {
             variant="ghost"
             size="icon"
             className={cn(
-              "size-10 shrink-0 rounded-full p-0 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground",
+              "size-8 shrink-0 rounded-full p-0 text-muted-foreground shadow-none drop-shadow-none hover:bg-muted hover:text-foreground hover:shadow-none",
               className,
             )}
             aria-label={
@@ -86,10 +89,10 @@ export function AccountMenu({ className }: { className?: string }) {
             }
           >
             {status === "signed-in" && profile ? (
-              <ProfileAvatar profile={profile} className="size-9" />
+              <ProfileAvatar profile={profile} className="size-8" />
             ) : (
               <UserRound
-                className={cn("size-5", status === "loading" && "animate-pulse")}
+                className={cn("size-4", status === "loading" && "animate-pulse")}
                 aria-hidden="true"
               />
             )}
@@ -149,6 +152,16 @@ export function AccountMenu({ className }: { className?: string }) {
           >
             <Upload className="h-4 w-4 text-muted-foreground" />
             Import backup…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className={actionRowClassName}
+            onSelect={() => {
+              // Let the menu unmount before the dialog, so they don't stack.
+              window.setTimeout(() => setHistoryOpen(true), 0);
+            }}
+          >
+            <History className="h-4 w-4 text-muted-foreground" />
+            History
           </DropdownMenuItem>
           {status === "signed-in" && (
             <>

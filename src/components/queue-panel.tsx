@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Bookmark, ListVideo, Trash2 } from "lucide-react";
+import { Bookmark, ListVideo, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,8 +34,14 @@ function hasTag(item: QueueItem, name: string) {
   return item.tags.some((tag) => tag.name.toLowerCase() === key);
 }
 
-/** `onPlay` runs after the user picks a video, e.g. to close the mobile drawer. */
-export function QueuePanel({ onPlay }: { onPlay?: () => void } = {}) {
+/**
+ * `onPlay` runs after the user picks a video; `onClose` adds a close button to the
+ * header. The mobile drawer uses both to get out of the player's way.
+ */
+export function QueuePanel({
+  onPlay,
+  onClose,
+}: { onPlay?: () => void; onClose?: () => void } = {}) {
   const {
     unwatched,
     watched,
@@ -376,6 +382,18 @@ export function QueuePanel({ onPlay }: { onPlay?: () => void } = {}) {
             </span>
             <div className="flex items-center gap-1">
               <AccountMenu />
+              {onClose && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={onClose}
+                  className="size-8 rounded-full text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+                  aria-label="Close queue"
+                >
+                  <X className="size-4" />
+                </Button>
+              )}
             </div>
           </div>
         </div>

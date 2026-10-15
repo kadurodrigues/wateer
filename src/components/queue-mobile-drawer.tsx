@@ -1,3 +1,4 @@
+import * as React from "react";
 import { ListVideo } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -5,8 +6,17 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { QueuePanel } from "@/components/queue-panel";
 
 export function QueueMobileDrawer() {
+  const [open, setOpen] = React.useState(false);
+
+  // The drawer covers the player on phones: get out of the way once a video is picked,
+  // and bring the player back into view if the page was scrolled down to comments.
+  function handlePlay() {
+    setOpen(false);
+    document.getElementById("main-content")?.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <Button
           size="icon"
@@ -23,7 +33,7 @@ export function QueueMobileDrawer() {
           </SheetHeader>
         </div>
         <div className="h-full">
-          <QueuePanel />
+          <QueuePanel onPlay={handlePlay} />
         </div>
       </SheetContent>
     </Sheet>

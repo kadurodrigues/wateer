@@ -52,7 +52,10 @@ function App() {
   return (
     <div className="flex min-h-screen justify-center bg-muted">
       <div className="mx-auto flex h-screen w-full max-w-[1200px] flex-col lg:flex-row lg:p-4">
-        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto rounded-none bg-background shadow-xl lg:rounded-3xl">
+        <main
+          id="main-content"
+          className="flex min-w-0 flex-1 flex-col overflow-y-auto rounded-none bg-background shadow-xl lg:rounded-3xl"
+        >
           <header className="border-b border-border p-6">
             {/* One gap-3 rhythm across logo → input → button. */}
             <div className="flex max-w-3xl items-center gap-3">

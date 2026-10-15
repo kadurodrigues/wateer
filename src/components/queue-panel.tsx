@@ -34,7 +34,8 @@ function hasTag(item: QueueItem, name: string) {
   return item.tags.some((tag) => tag.name.toLowerCase() === key);
 }
 
-export function QueuePanel() {
+/** `onPlay` runs after the user picks a video, e.g. to close the mobile drawer. */
+export function QueuePanel({ onPlay }: { onPlay?: () => void } = {}) {
   const {
     unwatched,
     watched,
@@ -330,7 +331,10 @@ export function QueuePanel() {
         lifted={lifted}
         showDropSlot={dropIndicator.id === item.id}
         overflowMenu={sidebarTab === "bookmarks"}
-        onPlay={() => setCurrent(item.id)}
+        onPlay={() => {
+          setCurrent(item.id);
+          onPlay?.();
+        }}
         onRemove={() => removeItem(item.id)}
         onToggleWatched={() => toggleWatched(item.id)}
         onToggleBookmark={() => toggleBookmark(item.id)}

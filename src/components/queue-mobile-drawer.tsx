@@ -26,14 +26,15 @@ export function QueueMobileDrawer() {
           <ListVideo className="h-5 w-5" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="w-full max-w-sm p-0">
+      {/* Narrower than the screen, so the page beside it can be tapped to close it. */}
+      <SheetContent side="right" hideClose className="w-[88%] max-w-sm p-0">
         <div className="sr-only">
           <SheetHeader>
             <SheetTitle>Queue</SheetTitle>
           </SheetHeader>
         </div>
         <div className="h-full">
-          <QueuePanel onPlay={handlePlay} />
+          <QueuePanel onPlay={handlePlay} onClose={() => setOpen(false)} />
         </div>
       </SheetContent>
     </Sheet>

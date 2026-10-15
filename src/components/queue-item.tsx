@@ -33,17 +33,22 @@ interface QueueItemProps {
   dragActive?: boolean;
   shiftY?: number;
   showDropSlot?: boolean;
+  /** Following a touch drag: track the pointer instead of animating. */
+  lifted?: boolean;
   onPlay: () => void;
   onRemove: () => void;
   onToggleWatched: () => void;
   onToggleBookmark?: () => void;
   overflowMenu?: boolean;
-  onDragStart: (id: string, startY: number) => void;
+  /** Return false to cancel the browser's drag. */
+  onDragStart: (id: string, startY: number) => boolean | void;
   onDragEnter?: (e: React.DragEvent<HTMLDivElement>, id: string) => void;
   onDragLeave?: (e: React.DragEvent<HTMLDivElement>, id: string) => void;
   onDragOver: (e: React.DragEvent<HTMLDivElement>, id: string) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>, id: string) => void;
   onDragEnd?: () => void;
+  onHandlePointerDown?: (event: React.PointerEvent<HTMLElement>) => void;
+  onHandleMove?: (offset: -1 | 1) => void;
 }
 
 export function QueueItemCard({
@@ -53,6 +58,7 @@ export function QueueItemCard({
   dragActive,
   shiftY = 0,
   showDropSlot,
+  lifted = false,
   onPlay,
   onRemove,
   onToggleWatched,
@@ -64,6 +70,8 @@ export function QueueItemCard({
   onDragOver,
   onDrop,
   onDragEnd,
+  onHandlePointerDown,
+  onHandleMove,
 }: QueueItemProps) {
   const [tagDialogOpen, setTagDialogOpen] = React.useState(false);
 
@@ -79,7 +87,7 @@ export function QueueItemCard({
           e.preventDefault();
           return;
         }
-        onDragStart(item.id, e.clientY);
+        if (onDragStart(item.id, e.clientY) === false) e.preventDefault();
       }}
       onDragEnter={(e) => onDragEnter?.(e, item.id)}
       onDragLeave={(e) => onDragLeave?.(e, item.id)}
@@ -99,15 +107,17 @@ export function QueueItemCard({
         className={cn(
           "group relative min-w-0 overflow-hidden rounded-[1.75rem] border-2 bg-card p-4",
           dragActive && "z-10",
-          dragActive
-            ? "motion-safe:transition-[transform,border-color] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)]"
-            : "transition-colors",
+          lifted
+            ? "z-20 shadow-xl"
+            : dragActive
+              ? "motion-safe:transition-[transform,border-color] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)]"
+              : "transition-colors",
           isActive && !item.watched
             ? "border-brand shadow-sm"
             : item.watched
               ? "border-border"
               : "border-border hover:border-brand",
-          isDragging && "opacity-40",
+          isDragging && !lifted && "opacity-40",
         )}
       >
         <div className="flex min-w-0 gap-4">
@@ -210,17 +220,11 @@ export function QueueItemCard({
                   {overflowMenu ? (
                     <>
                       {!item.watched && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="flex h-7 w-7 cursor-move items-center justify-center text-muted-foreground">
-                              <GripVertical className="h-3.5 w-3.5" />
-                              <span className="sr-only">Drag to reorder</span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Drag to reorder</p>
-                          </TooltipContent>
-                        </Tooltip>
+                        <ReorderHandle
+                          title={item.title}
+                          onPointerDown={onHandlePointerDown}
+                          onMove={onHandleMove}
+                        />
                       )}
                       <BookmarkCardMenu
                         item={item}
@@ -283,17 +287,11 @@ export function QueueItemCard({
                       )}
 
                       {!item.watched && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="flex h-7 w-7 cursor-move items-center justify-center text-muted-foreground">
-                              <GripVertical className="h-3.5 w-3.5" />
-                              <span className="sr-only">Drag to reorder</span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Drag to reorder</p>
-                          </TooltipContent>
-                        </Tooltip>
+                        <ReorderHandle
+                          title={item.title}
+                          onPointerDown={onHandlePointerDown}
+                          onMove={onHandleMove}
+                        />
                       )}
 
                       <Tooltip>
@@ -326,6 +324,45 @@ export function QueueItemCard({
         <VideoTagDialog item={item} open={tagDialogOpen} onOpenChange={setTagDialogOpen} />
       )}
     </div>
+  );
+}
+
+/**
+ * Drag with a mouse (the whole card is draggable) or a finger, or focus it and use
+ * the arrow keys. A div rather than a button: Firefox won't start a drag from a button.
+ */
+function ReorderHandle({
+  title,
+  onPointerDown,
+  onMove,
+}: {
+  title: string | null;
+  onPointerDown?: ((event: React.PointerEvent<HTMLElement>) => void) | undefined;
+  onMove?: ((offset: -1 | 1) => void) | undefined;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          role="button"
+          tabIndex={0}
+          data-reorder-handle
+          aria-label={`Reorder ${title ?? "video"}. Use the up and down arrow keys to move it.`}
+          onPointerDown={onPointerDown}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+            event.preventDefault();
+            onMove?.(event.key === "ArrowUp" ? -1 : 1);
+          }}
+          className="flex h-7 w-7 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>Drag, or use ↑ ↓, to reorder</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

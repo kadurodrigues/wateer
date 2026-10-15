@@ -8,6 +8,7 @@ import {
   type QueueState,
 } from "../queue-state.ts";
 import {
+  forgetSyncAccount,
   LAZY_DELAY_MS,
   SyncEngine,
   SyncError,
@@ -429,5 +430,56 @@ describe("signing in with existing local data", () => {
     await next.signIn(USER);
     expect(next.titles()).toEqual([]);
     expect(server.snapshot(USER).videos.size).toBe(0);
+  });
+});
+
+describe("signing out", () => {
+  test("drain sends batched playback positions right away", async () => {
+    const { laptop, phone } = await twoDevices();
+    const video = newItem("Paused mid-way");
+    laptop.dispatch({ type: "add", item: video });
+    await advance(100);
+    laptop.dispatch({ type: "update-playback", id: video.id, seconds: 95 });
+    await advance(100);
+    expect(server.snapshot(USER).videos.get(video.id)?.playback_seconds).toBe(0);
+
+    expect(await laptop.engine.drain()).toBe(0);
+    expect(server.snapshot(USER).videos.get(video.id)?.playback_seconds).toBe(95);
+    await advance(100);
+    expect(phone.state.items[0]!.playbackSeconds).toBe(95);
+  });
+
+  test("drain reports what couldn't be sent while offline", async () => {
+    const { laptop } = await twoDevices();
+    server.online = false;
+    laptop.dispatch({ type: "add", item: newItem("Stuck") });
+    await advance(100);
+    const draining = laptop.engine.drain();
+    await advance(1_000);
+    expect(await draining).toBeGreaterThan(0);
+  });
+
+  test("clearing one tab after sign-out never empties the account from another tab", async () => {
+    const shared = memoryStore();
+    const tab1 = new Device(server, shared);
+    await tab1.signIn();
+    for (const title of ["Keep", "These"]) tab1.dispatch({ type: "add", item: newItem(title) });
+    await advance(100);
+    const tab2 = new Device(server, shared, tab1.state);
+    await tab2.signIn();
+    await advance(100);
+
+    // Tab 2 signs out: it stops its engine, marks the browser signed out, clears itself.
+    tab2.engine.stop();
+    forgetSyncAccount(shared, now);
+    tab2.dispatch({ type: "replace", state: initialQueueState });
+    // Tab 1 receives the cleared state through storage events before hearing of it.
+    tab1.dispatch({ type: "replace", state: initialQueueState });
+    await advance(60_000);
+
+    expect([...server.snapshot(USER).videos.values()].map((v) => v.title).sort()).toEqual([
+      "Keep",
+      "These",
+    ]);
   });
 });

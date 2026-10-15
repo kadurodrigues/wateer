@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCount, formatRelativeDate } from "@/lib/format";
 import { fetchVideoComments } from "@/lib/youtube.functions";
-import type { CommentOrder, CommentsUnavailableReason, VideoComment } from "@/lib/youtube-comments";
+import {
+  splitTimestamps,
+  type CommentOrder,
+  type CommentsUnavailableReason,
+  type VideoComment,
+} from "@/lib/youtube-comments";
 import { cn } from "@/lib/utils";
 
 const ORDERS: Array<{ value: CommentOrder; label: string }> = [
@@ -30,9 +35,14 @@ const UNAVAILABLE_MESSAGES: Record<CommentsUnavailableReason, string> = {
 export function VideoComments({
   videoId,
   commentCount,
+  duration,
+  onSeek,
 }: {
   videoId: string;
   commentCount: number | null;
+  /** Seconds; timestamps past it stay plain text. */
+  duration: number | null;
+  onSeek: (seconds: number) => void;
 }) {
   const [open, setOpen] = React.useState(false);
   const [order, setOrder] = React.useState<CommentOrder>("relevance");
@@ -133,7 +143,13 @@ export function VideoComments({
               <>
                 <ul className="space-y-5">
                   {comments.map((comment) => (
-                    <CommentRow key={comment.id} comment={comment} videoId={videoId} />
+                    <CommentRow
+                      key={comment.id}
+                      comment={comment}
+                      videoId={videoId}
+                      duration={duration}
+                      onSeek={onSeek}
+                    />
                   ))}
                 </ul>
                 {query.hasNextPage && (
@@ -160,7 +176,21 @@ export function VideoComments({
 const LONG_COMMENT_CHARS = 300;
 const LONG_COMMENT_LINES = 4;
 
-function CommentRow({ comment, videoId }: { comment: VideoComment; videoId: string }) {
+function CommentRow({
+  comment,
+  videoId,
+  duration,
+  onSeek,
+}: {
+  comment: VideoComment;
+  videoId: string;
+  duration: number | null;
+  onSeek: (seconds: number) => void;
+}) {
+  const segments = React.useMemo(
+    () => splitTimestamps(comment.text, duration),
+    [comment.text, duration],
+  );
   const [expanded, setExpanded] = React.useState(false);
   const isLong =
     comment.text.length > LONG_COMMENT_CHARS ||
@@ -205,7 +235,21 @@ function CommentRow({ comment, videoId }: { comment: VideoComment; videoId: stri
             isLong && !expanded && "line-clamp-4",
           )}
         >
-          {comment.text}
+          {segments.map((segment, index) =>
+            segment.type === "text" ? (
+              <React.Fragment key={index}>{segment.value}</React.Fragment>
+            ) : (
+              <button
+                key={index}
+                type="button"
+                onClick={() => onSeek(segment.seconds)}
+                className="font-medium text-brand hover:underline focus-visible:underline focus-visible:outline-none"
+                aria-label={`Play from ${segment.value}`}
+              >
+                {segment.value}
+              </button>
+            ),
+          )}
         </p>
         {isLong && (
           <button

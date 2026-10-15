@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { commentsErrorReason, parseCommentThreads } from "./youtube-comments.ts";
+import { commentsErrorReason, parseCommentThreads, splitTimestamps } from "./youtube-comments.ts";
 
 function thread(overrides: Record<string, unknown> = {}, replies = 3) {
   return {
@@ -81,5 +81,43 @@ describe("commentsErrorReason", () => {
     expect(commentsErrorReason(error("quotaExceeded"))).toBe("quota");
     expect(commentsErrorReason(error("backendError"))).toBe("error");
     expect(commentsErrorReason({})).toBe("error");
+  });
+});
+
+describe("splitTimestamps", () => {
+  test("turns timestamps into seekable segments", () => {
+    expect(splitTimestamps("The drop at 2:31 and again at 1:02:05!")).toEqual([
+      { type: "text", value: "The drop at " },
+      { type: "time", value: "2:31", seconds: 151 },
+      { type: "text", value: " and again at " },
+      { type: "time", value: "1:02:05", seconds: 3725 },
+      { type: "text", value: "!" },
+    ]);
+  });
+
+  test("accepts a timestamp on its own or at the edges", () => {
+    expect(splitTimestamps("0:45")).toEqual([{ type: "time", value: "0:45", seconds: 45 }]);
+    expect(splitTimestamps("12:00 so good").map((s) => s.type)).toEqual(["time", "text"]);
+  });
+
+  test("leaves things that only look like times alone", () => {
+    const plain = (text: string) => splitTimestamps(text).every((s) => s.type === "text");
+    expect(plain("Score was 3:2")).toBe(true); // seconds need two digits
+    expect(plain("at 1:75")).toBe(true); // not a valid second
+    expect(plain("1:2:3:45")).toBe(true); // part of a longer run
+    expect(plain("version 10:30:15:20")).toBe(true);
+    expect(plain("1:75:00")).toBe(true); // minutes past 59 with an hour
+  });
+
+  test("keeps times past the end of the video as text", () => {
+    expect(splitTimestamps("see 0:30 and 9:59", 120)).toEqual([
+      { type: "text", value: "see " },
+      { type: "time", value: "0:30", seconds: 30 },
+      { type: "text", value: " and 9:59" },
+    ]);
+  });
+
+  test("returns plain text unchanged", () => {
+    expect(splitTimestamps("no times here")).toEqual([{ type: "text", value: "no times here" }]);
   });
 });

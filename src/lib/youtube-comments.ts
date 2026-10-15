@@ -96,3 +96,31 @@ export function commentsErrorReason(json: ApiCommentThreads): CommentsUnavailabl
   if (reasons.includes("quotaExceeded") || reasons.includes("dailyLimitExceeded")) return "quota";
   return "error";
 }
+
+export type CommentSegment =
+  { type: "text"; value: string } | { type: "time"; value: string; seconds: number };
+
+// m:ss, mm:ss or h:mm:ss, not part of a longer run of digits and colons.
+const TIMESTAMP = /(?<![\d:])(?:(\d{1,2}):)?(\d{1,2}):([0-5]\d)(?![\d:])/g;
+
+/**
+ * Split a comment into plain text and the timestamps people write, like "2:31",
+ * so those can seek the player. Times past the end of the video stay plain text.
+ */
+export function splitTimestamps(text: string, maxSeconds: number | null = null): CommentSegment[] {
+  const segments: CommentSegment[] = [];
+  let last = 0;
+  for (const match of text.matchAll(TIMESTAMP)) {
+    const [value, h, m = "0", s = "0"] = match;
+    const minutes = Number(m);
+    if (h !== undefined && minutes > 59) continue;
+    const seconds = Number(h ?? 0) * 3600 + minutes * 60 + Number(s);
+    if (maxSeconds != null && seconds > maxSeconds) continue;
+    const index = match.index ?? 0;
+    if (index > last) segments.push({ type: "text", value: text.slice(last, index) });
+    segments.push({ type: "time", value, seconds });
+    last = index + value.length;
+  }
+  if (last < text.length) segments.push({ type: "text", value: text.slice(last) });
+  return segments;
+}

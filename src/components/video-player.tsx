@@ -8,8 +8,12 @@ type YTPlayer = {
   destroy: () => void;
   getCurrentTime: () => number;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  playVideo?: () => void;
   getPlayerState?: () => number;
 };
+
+/** Lets the rest of the page jump the player to a time, once the player is ready. */
+export type SeekRef = React.MutableRefObject<((seconds: number) => void) | null>;
 
 declare global {
   interface Window {
@@ -75,12 +79,14 @@ export function VideoPlayer({
   startSeconds = 0,
   onEnded,
   onProgress,
+  seekRef,
 }: {
   videoId: string | null;
   itemId?: string | null;
   startSeconds?: number;
   onEnded?: (() => void) | undefined;
   onProgress?: ((itemId: string, seconds: number) => void) | undefined;
+  seekRef?: SeekRef | undefined;
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const onEndedRef = React.useRef(onEnded);
@@ -138,6 +144,17 @@ export function VideoPlayer({
         events: {
           onReady: () => {
             if (cancelled || !player) return;
+            const readyPlayer = player;
+            if (seekRef) {
+              seekRef.current = (seconds) => {
+                try {
+                  readyPlayer.seekTo(seconds, true);
+                  readyPlayer.playVideo?.();
+                } catch {
+                  // the player may be mid-teardown when a video switches
+                }
+              };
+            }
             const start = startSecondsRef.current;
             if (start > 0) {
               try {
@@ -177,9 +194,10 @@ export function VideoPlayer({
       cancelled = true;
       clearProgressTimer();
       reportProgress();
+      if (seekRef) seekRef.current = null;
       player?.destroy();
     };
-  }, [videoId, itemId]);
+  }, [videoId, itemId, seekRef]);
 
   if (!videoId) {
     return (

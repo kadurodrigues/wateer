@@ -1,3 +1,4 @@
+import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Bookmark, BookmarkCheck, X } from "lucide-react";
 
@@ -9,7 +10,7 @@ import { QueueMobileDrawer } from "@/components/queue-mobile-drawer";
 import { QueuePanel } from "@/components/queue-panel";
 import { useQueue } from "@/components/queue-provider";
 import { VideoComments } from "@/components/video-comments";
-import { VideoPlayer } from "@/components/video-player";
+import { VideoPlayer, type SeekRef } from "@/components/video-player";
 import { WateerLogo } from "@/components/wateer-logo";
 import { formatRelativeDate } from "@/lib/format";
 import { getTagColor } from "@/lib/tags";
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/")({
 function App() {
   const { currentItem, loaded, finishVideo, updatePlayback, toggleBookmark, updateTags } =
     useQueue();
+  const seekRef: SeekRef = React.useRef(null);
 
   if (!loaded) {
     return (
@@ -65,6 +67,7 @@ function App() {
             startSeconds={currentItem?.playbackSeconds ?? 0}
             onEnded={currentItem ? () => finishVideo(currentItem.id) : undefined}
             onProgress={updatePlayback}
+            seekRef={seekRef}
           />
 
           {currentItem && (
@@ -138,6 +141,8 @@ function App() {
                 key={currentItem.videoId}
                 videoId={currentItem.videoId}
                 commentCount={currentItem.commentCount}
+                duration={currentItem.duration}
+                onSeek={(seconds) => seekRef.current?.(seconds)}
               />
             </section>
           )}

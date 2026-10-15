@@ -22,7 +22,7 @@ import {
 } from "@/lib/queue-state";
 import { mergeTagSources, type QueueTag } from "@/lib/tags";
 import type { SyncStatus } from "@/lib/sync/engine";
-import { useQueueSync } from "@/components/use-queue-sync";
+import { useQueueSync, type SignOutResult } from "@/components/use-queue-sync";
 
 export type { HistoryEntry, QueueItem, ReorderSection } from "@/lib/queue-state";
 
@@ -71,6 +71,8 @@ type QueueContextValue = {
   importBackup: (json: string) => boolean;
   /** Sync with the signed-in account; null while signed out (local-only). */
   syncStatus: SyncStatus | null;
+  /** Sign out, clearing this browser's copy once pending changes reach the account. */
+  signOut: (options?: { force?: boolean }) => Promise<SignOutResult>;
 };
 
 const QUEUE_CONTEXT_KEY = Symbol.for("watch-later.queue-context");
@@ -406,7 +408,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     ).length;
   }, []);
 
-  const syncStatus = useQueueSync({ state, stateRef, dispatch, loaded });
+  const { status: syncStatus, signOut } = useQueueSync({ state, stateRef, dispatch, loaded });
 
   const value = React.useMemo(
     () => ({
@@ -442,6 +444,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       exportBackup,
       importBackup,
       syncStatus,
+      signOut,
     }),
     [
       items,
@@ -476,6 +479,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       exportBackup,
       importBackup,
       syncStatus,
+      signOut,
     ],
   );
 

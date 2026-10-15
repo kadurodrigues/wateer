@@ -13,6 +13,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QueueItemCard } from "@/components/queue-item";
 import { AccountMenu } from "@/components/account-menu";
+import { SignInNudge } from "@/components/sign-in-nudge";
 import { useQueue } from "@/components/queue-provider";
 import type { QueueItem, SidebarTab } from "@/components/queue-provider";
 import {
@@ -422,6 +423,7 @@ export function QueuePanel({
             </TabsTrigger>
           </TabsList>
         </Tabs>
+        <SignInNudgeSlot />
       </div>
 
       <ScrollArea className="min-w-0 flex-1 px-6 py-4">
@@ -538,6 +540,15 @@ export function QueuePanel({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Spaces the sign-in nudge under the tabs, only when it's showing. */
+function SignInNudgeSlot() {
+  return (
+    <div className="mt-3 empty:hidden">
+      <SignInNudge />
     </div>
   );
 }

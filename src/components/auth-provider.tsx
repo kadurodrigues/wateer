@@ -18,7 +18,8 @@ type AuthContextValue = {
   user: User | null;
   profile: AccountProfile | null;
   signInWithGoogle: () => Promise<void>;
-  signOut: () => Promise<void>;
+  /** Signs out this device only; other devices stay signed in. True on success. */
+  signOut: () => Promise<boolean>;
 };
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
@@ -91,9 +92,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = React.useCallback(async () => {
     const supabase = getSupabase();
-    if (!supabase) return;
-    const { error } = await supabase.auth.signOut();
-    if (error) toast.error(`Couldn't sign out: ${error.message}`);
+    if (!supabase) return false;
+    // Local scope: forget this device's session without signing out the user's others.
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) {
+      toast.error(`Couldn't sign out: ${error.message}`);
+      return false;
+    }
+    return true;
   }, []);
 
   const value = React.useMemo(

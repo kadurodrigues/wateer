@@ -2,7 +2,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
-import type { QueueAction, QueueState } from "@/lib/queue-state";
+import { initialQueueState, type QueueAction, type QueueState } from "@/lib/queue-state";
 import { getSupabase } from "@/lib/supabase";
 import {
   forgetSyncAccount,
@@ -32,9 +32,14 @@ const browserStorage: KeyValueStore = {
   },
 };
 
+export type SignOutResult =
+  | { signedOut: true }
+  /** `unsynced` changes couldn't reach the account (e.g. offline); call again with force. */
+  | { signedOut: false; unsynced: number };
+
 /**
- * Keeps the queue in sync with the signed-in account. Returns null while signed out,
- * when the app is local-only.
+ * Keeps the queue in sync with the signed-in account. `status` is null while signed
+ * out, when the app is local-only.
  */
 export function useQueueSync({
   state,
@@ -46,8 +51,11 @@ export function useQueueSync({
   stateRef: React.RefObject<QueueState>;
   dispatch: React.Dispatch<QueueAction>;
   loaded: boolean;
-}): SyncStatus | null {
-  const { status: authStatus, user } = useAuth();
+}): {
+  status: SyncStatus | null;
+  signOut: (options?: { force?: boolean }) => Promise<SignOutResult>;
+} {
+  const { status: authStatus, user, signOut: endSession } = useAuth();
   const userId = authStatus === "signed-in" ? (user?.id ?? null) : null;
   const [syncStatus, setSyncStatus] = React.useState<SyncStatus | null>(null);
   const engineRef = React.useRef<SyncEngine | null>(null);
@@ -106,5 +114,27 @@ export function useQueueSync({
     engineRef.current?.noteLocalState(state);
   }, [state]);
 
-  return syncStatus;
+  /**
+   * Send what's pending, then sign out and clear this browser's copy; the account
+   * keeps everything. The order matters: the engine stops, and this browser is marked
+   * signed out (so engines in other tabs stand down), before anything is cleared, so
+   * the clearing is never synced as deletions.
+   */
+  const signOut = React.useCallback(
+    async ({ force = false }: { force?: boolean } = {}): Promise<SignOutResult> => {
+      const engine = engineRef.current;
+      if (engine && !force) {
+        const unsynced = await engine.drain();
+        if (unsynced > 0) return { signedOut: false, unsynced };
+      }
+      engine?.stop();
+      forgetSyncAccount(browserStorage);
+      if (!(await endSession())) return { signedOut: false, unsynced: 0 };
+      dispatch({ type: "replace", state: initialQueueState });
+      return { signedOut: true };
+    },
+    [dispatch, endSession],
+  );
+
+  return { status: syncStatus, signOut };
 }

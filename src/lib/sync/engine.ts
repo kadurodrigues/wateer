@@ -80,14 +80,21 @@ const META_KEY = "wateer-sync-v1";
  * sign-in then merges this browser's data into the account instead of treating the
  * account as the whole truth, which would drop anything added while signed out.
  */
-export function forgetSyncAccount(storage: KeyValueStore) {
-  storage.set(META_KEY, JSON.stringify({ userId: null, pending: [] }));
+export function forgetSyncAccount(storage: KeyValueStore, now = Date.now()) {
+  const meta: Meta = { userId: null, pending: [], signedOutAt: now };
+  storage.set(META_KEY, JSON.stringify(meta));
 }
+
 /** Playback position is the one high-frequency field; send it at most this often. */
 export const LAZY_DELAY_MS = 15_000;
 const RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
 
-type Meta = { userId: string | null; pending: Array<[SyncKey, number]> };
+type Meta = {
+  userId: string | null;
+  pending: Array<[SyncKey, number]>;
+  /** Set on sign-out; engines started earlier (e.g. in other tabs) must stand down. */
+  signedOutAt?: number;
+};
 
 export type SyncEngineOptions = {
   transport: SyncTransport;
@@ -123,6 +130,7 @@ export class SyncEngine {
   private remergeQueued = false;
   private unsubscribe: (() => void) | null = null;
   private status: SyncStatus = "starting";
+  private startedAt = 0;
 
   constructor(options: SyncEngineOptions) {
     this.o = {
@@ -138,6 +146,7 @@ export class SyncEngine {
   }
 
   async start() {
+    this.startedAt = this.o.now();
     const meta = this.readMeta();
     const sameAccount = meta.userId === this.o.userId;
     if (sameAccount) {
@@ -160,9 +169,40 @@ export class SyncEngine {
     return this.pending.size;
   }
 
+  /**
+   * Send everything pending, including batched playback positions, and wait. Returns
+   * how many changes are still unsent: 0 unless offline, rejected or out of time.
+   */
+  async drain(timeoutMs = 8_000): Promise<number> {
+    const deadline = this.o.now() + timeoutMs;
+    const now = this.o.now();
+    for (const entry of this.pending.values()) entry.due = Math.min(entry.due, now);
+    while (this.pending.size && !this.stopped && this.ready && this.o.now() < deadline) {
+      if (this.status === "offline" || this.status === "error") break;
+      if (this.flushing)
+        await new Promise<void>((resolve) => this.o.setTimer(() => resolve(), 100));
+      else await this.flush();
+    }
+    return this.pending.size;
+  }
+
+  /**
+   * Another tab signed out after this engine started. Its cleared local data reaches
+   * this tab through storage events, possibly before this tab hears about the sign-out,
+   * and must never be synced as "delete everything".
+   */
+  private signedOutElsewhere(): boolean {
+    const meta = this.readMeta();
+    return meta.userId === null && (meta.signedOutAt ?? 0) >= this.startedAt;
+  }
+
   /** Call with every new local state; records which rows the change touched. */
   noteLocalState(next: QueueState) {
     if (this.stopped || next === this.baseline) return;
+    if (this.startedAt && this.signedOutElsewhere()) {
+      this.stop();
+      return;
+    }
     const { immediate, lazy, positions } = diffStates(this.baseline, next, this.positions);
     this.baseline = next;
     this.positions = positions;
@@ -274,6 +314,10 @@ export class SyncEngine {
 
   private async flush(): Promise<void> {
     if (this.stopped || !this.ready) return;
+    if (this.signedOutElsewhere()) {
+      this.stop();
+      return;
+    }
     if (this.flushing) {
       this.flushAgain = true;
       return;
@@ -431,6 +475,7 @@ export class SyncEngine {
       return {
         userId: typeof meta.userId === "string" ? meta.userId : null,
         pending: Array.isArray(meta.pending) ? meta.pending : [],
+        ...(typeof meta.signedOutAt === "number" ? { signedOutAt: meta.signedOutAt } : {}),
       };
     } catch {
       return { userId: null, pending: [] };

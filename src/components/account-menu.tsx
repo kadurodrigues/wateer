@@ -26,6 +26,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useAuth, type AccountProfile } from "@/components/auth-provider";
 import { QueueHistoryDialog } from "@/components/queue-history";
+import { SignOutDialog } from "@/components/sign-out-dialog";
 import { useQueue } from "@/components/queue-provider";
 import { useTheme } from "@/components/theme-provider";
 import type { SyncStatus } from "@/lib/sync/engine";
@@ -38,10 +39,11 @@ import { cn } from "@/lib/utils";
 export function AccountMenu({ className }: { className?: string }) {
   const { autoPlayNext, setAutoPlayNext, exportBackup, importBackup, syncStatus } = useQueue();
   const { darkMode, setDarkMode } = useTheme();
-  const { status, profile, signInWithGoogle, signOut } = useAuth();
+  const { status, profile, signInWithGoogle } = useAuth();
   // Outside the menu content, which unmounts as soon as the menu closes.
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [signOutOpen, setSignOutOpen] = React.useState(false);
 
   function downloadBackup() {
     const blob = new Blob([exportBackup()], { type: "application/json" });
@@ -72,6 +74,7 @@ export function AccountMenu({ className }: { className?: string }) {
         onChange={(event) => void handleFile(event)}
       />
       <QueueHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
+      <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -117,6 +120,16 @@ export function AccountMenu({ className }: { className?: string }) {
                   {syncStatus && <SyncStatusLine status={syncStatus} />}
                 </div>
               </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          {status === "disabled" && (
+            <>
+              {/* Without the Supabase env vars at build time, sign-in can't work. */}
+              <p className="flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground">
+                <CloudOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                Sign-in isn't set up for this deployment.
+              </p>
               <DropdownMenuSeparator />
             </>
           )}
@@ -166,7 +179,11 @@ export function AccountMenu({ className }: { className?: string }) {
           {status === "signed-in" && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className={actionRowClassName} onSelect={() => void signOut()}>
+              <DropdownMenuItem
+                className={actionRowClassName}
+                // Let the menu unmount before the dialog, so they don't stack.
+                onSelect={() => window.setTimeout(() => setSignOutOpen(true), 0)}
+              >
                 <LogOut className="h-4 w-4 text-muted-foreground" />
                 Sign out
               </DropdownMenuItem>

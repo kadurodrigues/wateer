@@ -13,7 +13,6 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QueueItemCard } from "@/components/queue-item";
 import { QueueHistory } from "@/components/queue-history";
-import { QueueSettings } from "@/components/queue-settings";
 import { useQueue } from "@/components/queue-provider";
 import type { QueueItem, SidebarTab } from "@/components/queue-provider";
 import {
@@ -373,7 +372,6 @@ export function QueuePanel() {
             </span>
             <div className="flex items-center gap-1">
               <QueueHistory />
-              <QueueSettings />
             </div>
           </div>
         </div>

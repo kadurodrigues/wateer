@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link2, Loader2 } from "lucide-react";
+import { Link2, Loader2, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,9 +42,18 @@ export function AddVideoForm({ className }: { className?: string }) {
       <Button
         type="submit"
         disabled={isAdding || !url.trim()}
-        className="shrink-0 rounded-2xl bg-brand px-6 py-6 text-sm font-semibold text-brand-foreground shadow-lg shadow-brand/25 hover:bg-brand-hover"
+        aria-label="Add to Queue"
+        className="shrink-0 rounded-2xl bg-brand px-4 py-6 text-sm font-semibold text-brand-foreground shadow-lg shadow-brand/25 hover:bg-brand-hover sm:px-6"
       >
-        {isAdding ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add to Queue"}
+        {isAdding ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <>
+            {/* Room for the account menu on phones. */}
+            <Plus className="h-5 w-5 sm:hidden" aria-hidden="true" />
+            <span className="hidden sm:inline">Add to Queue</span>
+          </>
+        )}
       </Button>
     </form>
   );

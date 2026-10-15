@@ -20,7 +20,9 @@ export function QueueMobileDrawer() {
       <SheetTrigger asChild>
         <Button
           size="icon"
-          className="fixed bottom-4 right-4 z-40 h-12 w-12 rounded-full shadow-xl lg:hidden"
+          variant="brand"
+          // The app's accent, like Add to Queue; "primary" is near-white in dark mode.
+          className="fixed bottom-4 right-4 z-40 h-12 w-12 rounded-full shadow-xl shadow-brand/25 lg:hidden"
           aria-label="Open queue"
         >
           <ListVideo className="h-5 w-5" />

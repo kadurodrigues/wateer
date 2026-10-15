@@ -48,9 +48,11 @@ on purpose — committing both makes the package manager Vercel picks ambiguous.
 
 ## Configuration
 
-| Variable          | Required | Purpose                                             |
-| ----------------- | -------- | --------------------------------------------------- |
-| `YOUTUBE_API_KEY` | No       | Fetches video durations via the YouTube Data API v3 |
+| Variable                        | Required | Purpose                                                   |
+| ------------------------------- | -------- | --------------------------------------------------------- |
+| `YOUTUBE_API_KEY`               | No       | Durations, comment counts and comments (server-side only) |
+| `VITE_SUPABASE_URL`             | No       | Supabase project URL, for sign-in and sync across devices |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | No       | Supabase publishable key; safe in the browser, see below  |
 
 Without the key, the app works normally — durations just show as unavailable, since
 titles and channel names come from YouTube's public oEmbed endpoint instead.
@@ -64,6 +66,25 @@ For local development, put it in a `.env` file (already gitignored):
 YOUTUBE_API_KEY=your-key-here
 ```
 
+### Accounts and sync (Supabase)
+
+Signing in syncs the queue, bookmarks, tags and history across devices. Without the
+two `VITE_SUPABASE_*` variables the app is local-only, exactly as before. The design
+is in [ADR 0002](docs/adr/0002-accounts-and-sync.md).
+
+1. Create a project at [supabase.com](https://supabase.com) and run
+   `supabase/migrations/*.sql` in order, in the dashboard's SQL editor (or with the
+   Supabase CLI: `supabase link` then `supabase db push`).
+2. Copy the **Project URL** and **publishable key** from _Project Settings → API_ into
+   `.env`. The publishable key is designed to be public; row-level security limits
+   each user to their own rows. Never use the secret (service role) key here.
+3. For Google sign-in, create an OAuth client in Google Cloud Console and add its ID
+   and secret under _Authentication → Providers → Google_.
+
+`npm test` also runs `supabase/tests`, which applies the migrations to an in-memory
+Postgres ([PGlite](https://pglite.dev)) and checks the security policies by acting as
+two different users.
+
 ## Deployment
 
 Deployed on Vercel, redeploying automatically on every push to `main`.
@@ -73,8 +94,8 @@ target from the environment, so a local `npm run build` would emit a layout that
 doesn't match Vercel's Build Output API. Nitro only runs on `build`; it has no role
 in the dev server.
 
-Set `YOUTUBE_API_KEY` in the Vercel project's environment variables for Production,
-Preview, and Development.
+Set `YOUTUBE_API_KEY`, `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in the
+Vercel project's environment variables for Production, Preview, and Development.
 
 ## Built with
 

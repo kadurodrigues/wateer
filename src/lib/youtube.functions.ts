@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestIP, setResponseHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 
+import { createRateLimiter, createTtlCache } from "@/lib/api-guard";
 import { extractYouTubeId } from "@/lib/youtube";
 import {
   commentsErrorReason,
@@ -28,11 +30,39 @@ export const fetchVideoMetadata = createServerFn({ method: "GET" })
     };
   });
 
+// The Data API calls below spend a daily quota on the server's key, and server
+// functions are public endpoints. Cache what's been fetched, and cap how often any
+// one client, and this instance as a whole, may reach Google.
+const perClientLimit = createRateLimiter({ limit: 60, windowMs: 60_000 });
+const instanceLimit = createRateLimiter({ limit: 600, windowMs: 60 * 60_000 });
+
+function mayCallYouTubeApi(): boolean {
+  // Vercel sets X-Forwarded-For itself, so it can be trusted there.
+  const ip = getRequestIP({ xForwardedFor: true }) ?? "unknown";
+  return perClientLimit.take(ip) && instanceLimit.take("all");
+}
+
+/** Let Vercel's CDN answer repeats of this response without running the function. */
+function cacheAtEdge(seconds: number) {
+  setResponseHeader(
+    "Cache-Control",
+    `public, max-age=0, s-maxage=${seconds}, stale-while-revalidate=${seconds * 6}`,
+  );
+}
+
+type VideoStats = { duration: number | null; commentCount: number | null };
+
+const STATS_TTL_SECONDS = 6 * 60 * 60;
+const statsCache = createTtlCache<VideoStats>({
+  maxEntries: 2000,
+  ttlMs: STATS_TTL_SECONDS * 1000,
+});
+
 /** Duration and comment count, from one Data API call. */
 export const fetchVideoStats = createServerFn({ method: "GET" })
   .validator((data) => z.string().url().parse(data))
-  .handler(async ({ data: url }) => {
-    const empty = { duration: null, commentCount: null };
+  .handler(async ({ data: url }): Promise<VideoStats> => {
+    const empty: VideoStats = { duration: null, commentCount: null };
     const apiKey = process.env["YOUTUBE_API_KEY"];
     if (!apiKey) {
       return empty;
@@ -40,6 +70,15 @@ export const fetchVideoStats = createServerFn({ method: "GET" })
 
     const videoId = extractYouTubeId(url);
     if (!videoId) {
+      return empty;
+    }
+
+    const cached = statsCache.get(videoId);
+    if (cached) {
+      cacheAtEdge(STATS_TTL_SECONDS);
+      return cached;
+    }
+    if (!mayCallYouTubeApi()) {
       return empty;
     }
 
@@ -57,11 +96,14 @@ export const fetchVideoStats = createServerFn({ method: "GET" })
       }>;
     };
     const video = json.items?.[0];
-    return {
+    const stats: VideoStats = {
       duration: parseIsoDuration(video?.contentDetails?.duration),
       // Absent when comments are turned off.
       commentCount: parseCount(video?.statistics?.commentCount),
     };
+    statsCache.set(videoId, stats);
+    cacheAtEdge(STATS_TTL_SECONDS);
+    return stats;
   });
 
 function parseIsoDuration(isoDuration: string | undefined): number | null {
@@ -84,6 +126,16 @@ function parseCount(value: string | undefined): number | null {
 }
 
 const COMMENTS_PER_PAGE = 20;
+const COMMENTS_TTL_SECONDS = 10 * 60;
+const commentsCache = createTtlCache<CommentsPage>({
+  maxEntries: 500,
+  ttlMs: COMMENTS_TTL_SECONDS * 1000,
+});
+
+/** Answers that won't change by asking again soon are worth keeping. */
+function isCacheable(page: CommentsPage) {
+  return page.status === "ok" || page.reason === "disabled" || page.reason === "not-found";
+}
 
 export const fetchVideoComments = createServerFn({ method: "GET" })
   .validator((data) =>
@@ -101,6 +153,16 @@ export const fetchVideoComments = createServerFn({ method: "GET" })
       return { status: "unavailable", reason: "no-api-key" };
     }
 
+    const cacheKey = `${data.videoId}:${data.order}:${data.pageToken ?? ""}`;
+    const cached = commentsCache.get(cacheKey);
+    if (cached) {
+      cacheAtEdge(COMMENTS_TTL_SECONDS);
+      return cached;
+    }
+    if (!mayCallYouTubeApi()) {
+      return { status: "unavailable", reason: "busy" };
+    }
+
     const params = new URLSearchParams({
       part: "snippet",
       videoId: data.videoId,
@@ -114,8 +176,12 @@ export const fetchVideoComments = createServerFn({ method: "GET" })
     const response = await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?${params}`);
     const json = await response.json().catch(() => ({}));
 
-    if (!response.ok) {
-      return { status: "unavailable", reason: commentsErrorReason(json) };
+    const page: CommentsPage = response.ok
+      ? parseCommentThreads(json)
+      : { status: "unavailable", reason: commentsErrorReason(json) };
+    if (isCacheable(page)) {
+      commentsCache.set(cacheKey, page);
+      cacheAtEdge(COMMENTS_TTL_SECONDS);
     }
-    return parseCommentThreads(json);
+    return page;
   });

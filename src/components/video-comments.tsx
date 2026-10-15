@@ -20,6 +20,7 @@ const UNAVAILABLE_MESSAGES: Record<CommentsUnavailableReason, string> = {
   disabled: "Comments are turned off for this video.",
   "not-found": "This video couldn't be found on YouTube.",
   quota: "The YouTube API quota is used up for today. Try again tomorrow.",
+  busy: "Too many requests right now. Try again in a minute.",
   error: "Comments couldn't be loaded.",
 };
 
@@ -62,7 +63,9 @@ export function VideoComments({
         ? UNAVAILABLE_MESSAGES.error
         : null;
   const canRetry =
-    query.isError || (firstPage?.status === "unavailable" && firstPage.reason === "error");
+    query.isError ||
+    (firstPage?.status === "unavailable" &&
+      (firstPage.reason === "error" || firstPage.reason === "busy"));
 
   return (
     // Fills the space under the video info and scrolls on its own, so the video stays in view.

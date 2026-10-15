@@ -1,5 +1,15 @@
 import * as React from "react";
-import { Download, LogIn, LogOut, Upload, UserRound } from "lucide-react";
+import {
+  Cloud,
+  CloudOff,
+  Download,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  TriangleAlert,
+  Upload,
+  UserRound,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -16,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { useAuth, type AccountProfile } from "@/components/auth-provider";
 import { useQueue } from "@/components/queue-provider";
 import { useTheme } from "@/components/theme-provider";
+import type { SyncStatus } from "@/lib/sync/engine";
 import { cn } from "@/lib/utils";
 
 /**
@@ -24,7 +35,7 @@ import { cn } from "@/lib/utils";
  * without opening the queue drawer.
  */
 export function AccountMenu({ className }: { className?: string }) {
-  const { autoPlayNext, setAutoPlayNext, exportBackup, importBackup } = useQueue();
+  const { autoPlayNext, setAutoPlayNext, exportBackup, importBackup, syncStatus } = useQueue();
   const { darkMode, setDarkMode } = useTheme();
   const { status, profile, signInWithGoogle, signOut } = useAuth();
   // Outside the menu content, which unmounts as soon as the menu closes.
@@ -100,6 +111,7 @@ export function AccountMenu({ className }: { className?: string }) {
                   {profile.email && (
                     <p className="truncate text-xs text-muted-foreground">{profile.email}</p>
                   )}
+                  {syncStatus && <SyncStatusLine status={syncStatus} />}
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -150,6 +162,42 @@ export function AccountMenu({ className }: { className?: string }) {
         </DropdownMenuContent>
       </DropdownMenu>
     </>
+  );
+}
+
+const SYNC_STATUS_TEXT: Record<SyncStatus, string> = {
+  starting: "Syncing…",
+  syncing: "Syncing…",
+  synced: "Synced",
+  offline: "Offline: changes will sync when you're back online",
+  error: "Some changes couldn't sync",
+};
+
+function SyncStatusLine({ status }: { status: SyncStatus }) {
+  const Icon =
+    status === "synced"
+      ? Cloud
+      : status === "offline"
+        ? CloudOff
+        : status === "error"
+          ? TriangleAlert
+          : RefreshCw;
+  return (
+    <p
+      className={cn(
+        "mt-1 flex items-center gap-1.5 text-xs",
+        status === "error" ? "text-destructive" : "text-muted-foreground",
+      )}
+    >
+      <Icon
+        className={cn(
+          "h-3 w-3 shrink-0",
+          (status === "syncing" || status === "starting") && "animate-spin",
+        )}
+        aria-hidden="true"
+      />
+      {SYNC_STATUS_TEXT[status]}
+    </p>
   );
 }
 

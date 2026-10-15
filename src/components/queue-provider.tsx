@@ -21,6 +21,8 @@ import {
   type ReorderSection,
 } from "@/lib/queue-state";
 import { mergeTagSources, type QueueTag } from "@/lib/tags";
+import type { SyncStatus } from "@/lib/sync/engine";
+import { useQueueSync } from "@/components/use-queue-sync";
 
 export type { HistoryEntry, QueueItem, ReorderSection } from "@/lib/queue-state";
 
@@ -67,6 +69,8 @@ type QueueContextValue = {
   exportBackup: () => string;
   /** Replace everything with a backup's contents. False if it isn't a Wateer backup. */
   importBackup: (json: string) => boolean;
+  /** Sync with the signed-in account; null while signed out (local-only). */
+  syncStatus: SyncStatus | null;
 };
 
 const QUEUE_CONTEXT_KEY = Symbol.for("watch-later.queue-context");
@@ -402,6 +406,8 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     ).length;
   }, []);
 
+  const syncStatus = useQueueSync({ state, stateRef, dispatch, loaded });
+
   const value = React.useMemo(
     () => ({
       items,
@@ -435,6 +441,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       readdFromHistory,
       exportBackup,
       importBackup,
+      syncStatus,
     }),
     [
       items,
@@ -468,6 +475,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       readdFromHistory,
       exportBackup,
       importBackup,
+      syncStatus,
     ],
   );
 

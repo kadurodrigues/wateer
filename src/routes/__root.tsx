@@ -121,7 +121,8 @@ function RootShell({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <HeadContent />
       </head>
-      <body>
+      {/* Extensions like Grammarly add attributes to <body> before React hydrates. */}
+      <body suppressHydrationWarning>
         {children}
         <Scripts />
       </body>

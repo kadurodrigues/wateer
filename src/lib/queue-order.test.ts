@@ -12,9 +12,9 @@ function assertEqual(actual: unknown, expected: unknown, label: string) {
 }
 
 const items = [
-  { id: "r1", list: "recent" },
+  { id: "r1", list: "queue" },
   { id: "b1", list: "bookmarks" },
-  { id: "r2", list: "recent" },
+  { id: "r2", list: "queue" },
   { id: "b2", list: "bookmarks" },
   { id: "b3", list: "bookmarks" },
 ];
@@ -24,13 +24,13 @@ const isBookmark = (item: (typeof items)[number]) => item.list === "bookmarks";
 assertEqual(
   reorderMatching(items, isBookmark, "b1", "b3", "after")?.map((i) => i.id),
   ["r1", "b2", "r2", "b3", "b1"],
-  "moving a bookmark after another leaves recent items in place",
+  "moving a bookmark after another leaves queue items in place",
 );
 
 assertEqual(
   reorderMatching(items, isBookmark, "b3", "b1", "before")?.map((i) => i.id),
   ["r1", "b3", "r2", "b1", "b2"],
-  "moving a bookmark before another keeps relative recent order",
+  "moving a bookmark before another keeps relative queue order",
 );
 
 assertEqual(

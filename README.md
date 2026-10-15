@@ -5,8 +5,11 @@ A personal YouTube watch-later queue with a built-in player and a reorderable li
 The name is a portmanteau of **Wat**ch + La**ter**.
 
 Paste a YouTube URL, and Wateer pulls the title and channel, drops the video at the
-end of your queue, and plays it inline. Reorder by dragging, tag the videos you
-bookmark, and pick up where you left off — playback position is remembered per video.
+end of your queue, and plays it inline. Reorder by dragging (mouse or touch) or with
+the arrow keys, tag the videos you bookmark, read a video's comments, and pick up
+where you left off — playback position is remembered per video.
+
+Everything is stored in your browser. Use **Settings → Export backup** to keep a copy.
 
 ## Development
 
@@ -20,13 +23,21 @@ bun install
 npm run dev
 ```
 
-| Script | What it does |
-| --- | --- |
-| `npm run dev` | Start the dev server |
-| `npm run build` | Production build |
-| `npm run preview` | Serve the production build locally |
-| `npm run lint` | ESLint |
-| `npm run format` | Prettier |
+| Script            | What it does                               |
+| ----------------- | ------------------------------------------ |
+| `npm run dev`     | Start the dev server                       |
+| `npm run build`   | Production build                           |
+| `npm run preview` | Serve the production build locally         |
+| `npm test`        | Unit tests (runs `bun test`, so needs Bun) |
+| `npm run lint`    | ESLint                                     |
+| `npm run format`  | Prettier                                   |
+
+### YouTube API key
+
+Titles and channels come from YouTube's oEmbed endpoint and need no key. Durations,
+comment counts and comments need a [YouTube Data API v3](https://developers.google.com/youtube/v3/getting-started)
+key: copy `.env.example` to `.env` and set `YOUTUBE_API_KEY`. Without it the app still
+works; those features are just unavailable. The key is only read on the server.
 
 ### Lockfiles
 
@@ -37,9 +48,9 @@ on purpose — committing both makes the package manager Vercel picks ambiguous.
 
 ## Configuration
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `YOUTUBE_API_KEY` | No | Fetches video durations via the YouTube Data API v3 |
+| Variable          | Required | Purpose                                             |
+| ----------------- | -------- | --------------------------------------------------- |
+| `YOUTUBE_API_KEY` | No       | Fetches video durations via the YouTube Data API v3 |
 
 Without the key, the app works normally — durations just show as unavailable, since
 titles and channel names come from YouTube's public oEmbed endpoint instead.

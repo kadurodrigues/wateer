@@ -24,7 +24,7 @@ import { mergeTagSources, type QueueTag } from "@/lib/tags";
 
 export type { HistoryEntry, QueueItem, ReorderSection } from "@/lib/queue-state";
 
-export type SidebarTab = "recent" | "bookmarks";
+export type SidebarTab = "queue" | "bookmarks";
 
 type QueueContextValue = {
   items: QueueItem[];
@@ -98,7 +98,7 @@ function plural(count: number, one: string, many = `${one}s`) {
 
 export function QueueProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = React.useReducer(queueReducer, initialQueueState);
-  const [sidebarTab, setSidebarTab] = React.useState<SidebarTab>("recent");
+  const [sidebarTab, setSidebarTab] = React.useState<SidebarTab>("queue");
   const [loaded, setLoaded] = React.useState(false);
   const stateRef = React.useRef(state);
   stateRef.current = state;
@@ -178,7 +178,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!currentItem || currentItem.id === syncedTabForIdRef.current) return;
     syncedTabForIdRef.current = currentItem.id;
-    setSidebarTab(currentItem.bookmarked ? "bookmarks" : "recent");
+    setSidebarTab(currentItem.bookmarked ? "bookmarks" : "queue");
   }, [currentItem]);
 
   /** Run a destructive action and offer to put the affected items back. */

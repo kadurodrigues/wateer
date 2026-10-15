@@ -79,7 +79,8 @@ export function buildYouTubeWatchUrl(videoId: string): string {
 export function buildYouTubeEmbedUrl(videoId: string, startSeconds = 0): string {
   const start = Number.isFinite(startSeconds) ? Math.max(0, Math.floor(startSeconds)) : 0;
   const startParam = start > 0 ? `&start=${start}` : "";
-  return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?rel=0&modestbranding=1&autoplay=1&enablejsapi=1${startParam}`;
+  // playsinline: iPhones otherwise jump to fullscreen, and won't autoplay at all.
+  return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?rel=0&modestbranding=1&autoplay=1&playsinline=1&enablejsapi=1${startParam}`;
 }
 
 export function buildYouTubeThumbnailUrl(videoId: string): string {

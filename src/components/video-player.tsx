@@ -9,6 +9,7 @@ type YTPlayer = {
   getCurrentTime: () => number;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   playVideo?: () => void;
+  mute?: () => void;
   getPlayerState?: () => number;
 };
 
@@ -41,6 +42,9 @@ const PROGRESS_INTERVAL_MS = 3000;
 const YT_ENDED = 0;
 const YT_PLAYING = 1;
 const YT_PAUSED = 2;
+const YT_BUFFERING = 3;
+/** How long to give autoplay with sound before assuming the browser blocked it. */
+const AUTOPLAY_CHECK_MS = 1500;
 
 let apiPromise: Promise<void> | null = null;
 
@@ -115,6 +119,7 @@ export function VideoPlayer({
     let cancelled = false;
     let player: YTPlayer | null = null;
     let progressTimer: ReturnType<typeof setInterval> | null = null;
+    let autoplayCheck: ReturnType<typeof setTimeout> | null = null;
     const progressItemId = itemId;
 
     const reportProgress = () => {
@@ -163,6 +168,19 @@ export function VideoPlayer({
                 // seek can fail if the player is not ready enough; start= URL is the fallback
               }
             }
+            // Phones block autoplay with sound but allow it muted. If the video hasn't
+            // started, start it muted; YouTube's player then offers "Tap to unmute".
+            autoplayCheck = setTimeout(() => {
+              if (cancelled) return;
+              try {
+                const state = readyPlayer.getPlayerState?.();
+                if (state === YT_PLAYING || state === YT_BUFFERING || state === YT_ENDED) return;
+                readyPlayer.mute?.();
+                readyPlayer.playVideo?.();
+              } catch {
+                // the player may be mid-teardown when a video switches
+              }
+            }, AUTOPLAY_CHECK_MS);
           },
           onStateChange: (event) => {
             const ended = window.YT?.PlayerState?.ENDED ?? YT_ENDED;
@@ -192,6 +210,7 @@ export function VideoPlayer({
 
     return () => {
       cancelled = true;
+      if (autoplayCheck) clearTimeout(autoplayCheck);
       clearProgressTimer();
       reportProgress();
       if (seekRef) seekRef.current = null;

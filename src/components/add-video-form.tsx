@@ -28,7 +28,11 @@ export function AddVideoForm({ className }: { className?: string }) {
           <Link2 className="h-4 w-4 text-muted-foreground" />
         </div>
         <Input
-          type="url"
+          // Text, not url: the browser would reject links pasted without https://.
+          type="text"
+          inputMode="url"
+          autoComplete="off"
+          spellCheck={false}
           placeholder="Paste video link..."
           value={url}
           onChange={(e) => setUrl(e.target.value)}

@@ -2,7 +2,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { fetchVideoMetadata, fetchVideoStats } from "@/lib/youtube.functions";
-import { buildYouTubeThumbnailUrl, extractYouTubeId } from "@/lib/youtube";
+import { buildYouTubeThumbnailUrl, buildYouTubeWatchUrl, parseYouTubeUrl } from "@/lib/youtube";
 import {
   STORAGE_KEY,
   parseQueueState,
@@ -230,9 +230,25 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
   }, [currentItem, loadDetails]);
 
   const enqueue = React.useCallback(
-    async (videoId: string, url: string, title: string | null) => {
-      if (stateRef.current.items.some((i) => i.videoId === videoId)) {
-        toast.error("This video is already in your queue.");
+    async (videoId: string, url: string, title: string | null, startSeconds = 0) => {
+      const { items, currentId } = stateRef.current;
+      const existing = items.find((i) => i.videoId === videoId);
+      if (existing) {
+        if (existing.id === currentId) {
+          toast("This video is already playing.");
+          return;
+        }
+        const where = existing.bookmarked
+          ? "your bookmarks"
+          : existing.watched
+            ? "your watched videos"
+            : "your queue";
+        toast(`This video is already in ${where}.`, {
+          action: {
+            label: "Play",
+            onClick: () => dispatch({ type: "set-current", id: existing.id }),
+          },
+        });
         return;
       }
       dispatch({
@@ -251,7 +267,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
           bookmarked: false,
           inQueue: true,
           addedAt: Date.now(),
-          playbackSeconds: 0,
+          playbackSeconds: startSeconds,
         },
       });
       await loadDetails(videoId, url);
@@ -261,12 +277,17 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = React.useCallback(
     async (url: string) => {
-      const videoId = extractYouTubeId(url);
-      if (!videoId) {
+      const parsed = parseYouTubeUrl(url);
+      if (!parsed) {
         toast.error("That doesn't look like a valid YouTube URL.");
         return;
       }
-      await enqueue(videoId, url, null);
+      await enqueue(
+        parsed.videoId,
+        buildYouTubeWatchUrl(parsed.videoId),
+        null,
+        parsed.startSeconds,
+      );
     },
     [enqueue],
   );

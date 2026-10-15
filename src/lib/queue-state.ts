@@ -125,6 +125,12 @@ export function nextAfter(items: QueueItem[], leaving: QueueItem): string | null
   return items.find((i) => i.id !== leaving.id && matchesSection(i, section))?.id ?? null;
 }
 
+/** Which reorderable list an item appears in. */
+export function sectionOf(item: QueueItem): ReorderSection {
+  if (item.bookmarked) return item.watched ? "bookmarked-watched" : "bookmarked-unwatched";
+  return item.watched ? "watched" : "unwatched";
+}
+
 /** Stable order: queued unwatched, queued watched, then bookmarks cleared out of the queue. */
 function partitionByWatched(items: QueueItem[]): QueueItem[] {
   const active = items.filter(isInQueue);

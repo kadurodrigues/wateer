@@ -39,6 +39,22 @@ assertEqual(
   "dropping onto an item outside the section is ignored",
 );
 
+const list = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+const all = () => true;
+const order = (source: string, target: string, position: "before" | "after") =>
+  reorderMatching(list, all, source, target, position)?.map((i) => i.id);
+
+assertEqual(order("a", "b", "after"), ["b", "a", "c", "d"], "moving down after the next item");
+assertEqual(order("a", "c", "after"), ["b", "c", "a", "d"], "moving down after a later item");
+assertEqual(order("a", "c", "before"), ["b", "a", "c", "d"], "moving down before a later item");
+assertEqual(order("d", "b", "before"), ["a", "d", "b", "c"], "moving up before an earlier item");
+assertEqual(order("d", "b", "after"), ["a", "b", "d", "c"], "moving up after an earlier item");
+assertEqual(
+  order("b", "a", "after"),
+  ["a", "b", "c", "d"],
+  "dropping into its own slot is a no-op",
+);
+
 if (process.exitCode) {
   process.exit(process.exitCode);
 }

@@ -22,10 +22,13 @@ import {
   shiftYForDrop,
   type DragDirection,
 } from "@/lib/queue-drop";
+import { sectionOf } from "@/lib/queue-state";
 import { getTagColor } from "@/lib/tags";
 import { cn } from "@/lib/utils";
 
 const ALL_TAGS_FILTER = "__all__";
+const AUTO_SCROLL_EDGE_PX = 56;
+const AUTO_SCROLL_MAX_SPEED = 14;
 
 function hasTag(item: QueueItem, name: string) {
   const key = name.toLowerCase();
@@ -87,14 +90,34 @@ export function QueuePanel() {
     }
   }, [usedTags, tagFilter]);
 
+  const dropIndicatorRef = React.useRef(dropIndicator);
   const setIndicator = React.useCallback(
     (id: string | null, position: "before" | "after" | null) => {
-      setDropIndicator((prev) =>
-        prev.id === id && prev.position === position ? prev : { id, position },
-      );
+      const prev = dropIndicatorRef.current;
+      if (prev.id === id && prev.position === position) return;
+      dropIndicatorRef.current = { id, position };
+      setDropIndicator(dropIndicatorRef.current);
     },
     [],
   );
+
+  /** The list an item is shown in, as rendered (bookmarks respect the tag filter). */
+  function visibleListOf(item: QueueItem): QueueItem[] {
+    switch (sectionOf(item)) {
+      case "unwatched":
+        return unwatched;
+      case "watched":
+        return watched;
+      case "bookmarked-unwatched":
+        return bookmarkedUnwatched;
+      case "bookmarked-watched":
+        return bookmarkedWatched;
+    }
+  }
+
+  function findItem(id: string) {
+    return allItems.find((i) => i.id === id) ?? bookmarked.find((i) => i.id === id);
+  }
 
   function handleDragStart(id: string, startY: number) {
     draggingIdRef.current = id;
@@ -125,72 +148,49 @@ export function QueuePanel() {
     rectsRef.current = [];
   }
 
-  function handleListDragOver(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
+  /** Point the drop slot at whatever is under `y`, in the coordinates the drag started in. */
+  function updateIndicator(y: number) {
     const draggingId = draggingIdRef.current;
     if (!draggingId) return;
-
-    const source = allItems.find((i) => i.id === draggingId);
+    const source = findItem(draggingId);
     if (!source) return;
 
     directionRef.current = resolveDragDirection({
-      y: e.clientY,
+      y,
       lastY: lastYRef.current,
       previous: directionRef.current,
     });
-    lastYRef.current = e.clientY;
+    lastYRef.current = y;
 
-    const sectionIds = new Set((source.watched ? watched : unwatched).map((i) => i.id));
+    const sectionIds = new Set(visibleListOf(source).map((i) => i.id));
     const rects = rectsRef.current.filter((r) => sectionIds.has(r.id));
     const next = resolveDropIndicator({
-      y: e.clientY,
+      y,
       grabY: grabYRef.current,
       draggingId,
       rects,
       direction: directionRef.current,
     });
-
-    if (!next) {
-      setIndicator(null, null);
-      return;
-    }
-
-    setIndicator(next.id, next.position);
+    setIndicator(next?.id ?? null, next?.position ?? null);
   }
 
-  function handleBookmarksDragOver(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
+  function commitDrop() {
     const draggingId = draggingIdRef.current;
-    if (!draggingId) return;
-
-    directionRef.current = resolveDragDirection({
-      y: e.clientY,
-      lastY: lastYRef.current,
-      previous: directionRef.current,
-    });
-    lastYRef.current = e.clientY;
-
-    const source = bookmarked.find((i) => i.id === draggingId);
-    if (!source) return;
-
-    const sectionIds = new Set(
-      (source.watched ? bookmarkedWatched : bookmarkedUnwatched).map((i) => i.id),
-    );
-    const rects = rectsRef.current.filter((r) => sectionIds.has(r.id));
-    const next = resolveDropIndicator({
-      y: e.clientY,
-      grabY: grabYRef.current,
-      draggingId,
-      rects,
-      direction: directionRef.current,
-    });
-
-    if (!next) {
-      setIndicator(null, null);
-      return;
+    const { id: targetId, position } = dropIndicatorRef.current;
+    const source = draggingId ? findItem(draggingId) : undefined;
+    if (source && targetId && source.id !== targetId) {
+      reorder(source.id, targetId, sectionOf(source), position ?? undefined);
     }
+    handleDragEnd();
+  }
 
-    setIndicator(next.id, next.position);
+  // Window listeners outlive the render that added them; route them to the latest handlers.
+  const latest = React.useRef({ updateIndicator, commitDrop, handleDragEnd });
+  latest.current = { updateIndicator, commitDrop, handleDragEnd };
+
+  function handleListDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    updateIndicator(e.clientY);
   }
 
   function handleListDragLeave(e: React.DragEvent<HTMLDivElement>) {
@@ -201,26 +201,109 @@ export function QueuePanel() {
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
-    const targetId = dropIndicator.id;
-    if (draggingId && targetId && draggingId !== targetId) {
-      const source =
-        sidebarTab === "bookmarks"
-          ? bookmarked.find((i) => i.id === draggingId)
-          : allItems.find((i) => i.id === draggingId);
-      if (source) {
-        const section =
-          sidebarTab === "bookmarks"
-            ? source.watched
-              ? "bookmarked-watched"
-              : "bookmarked-unwatched"
-            : source.watched
-              ? "watched"
-              : "unwatched";
-        reorder(draggingId, targetId, section, dropIndicator.position ?? undefined);
-      }
-    }
-    handleDragEnd();
+    commitDrop();
   }
+
+  // Touch and pen drag from the handle. HTML5 drag-and-drop doesn't fire for touch,
+  // so follow the pointer by hand, reusing the same drop logic as the mouse.
+  const [pointerOffset, setPointerOffset] = React.useState<number | null>(null);
+  const stopPointerDragRef = React.useRef<(() => void) | null>(null);
+  React.useEffect(() => () => stopPointerDragRef.current?.(), []);
+
+  function startPointerDrag(id: string, event: React.PointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse" || draggingIdRef.current) return;
+    event.preventDefault();
+
+    const pointerId = event.pointerId;
+    const startY = event.clientY;
+    const viewport = listRef.current?.closest<HTMLElement>("[data-radix-scroll-area-viewport]");
+    const startScroll = viewport?.scrollTop ?? 0;
+    let clientY = startY;
+    // The rects were measured before any scrolling; shift the pointer to match them.
+    const contentY = () => clientY + ((viewport?.scrollTop ?? startScroll) - startScroll);
+    const update = () => {
+      const y = contentY();
+      latest.current.updateIndicator(y);
+      setPointerOffset(y - startY);
+    };
+
+    handleDragStart(id, startY);
+    setPointerOffset(0);
+
+    let frame = requestAnimationFrame(function autoScroll() {
+      frame = requestAnimationFrame(autoScroll);
+      if (!viewport) return;
+      const { top, bottom } = viewport.getBoundingClientRect();
+      const edge = AUTO_SCROLL_EDGE_PX;
+      const speed =
+        clientY < top + edge
+          ? -Math.ceil(((top + edge - clientY) / edge) * AUTO_SCROLL_MAX_SPEED)
+          : clientY > bottom - edge
+            ? Math.ceil(((clientY - (bottom - edge)) / edge) * AUTO_SCROLL_MAX_SPEED)
+            : 0;
+      if (!speed) return;
+      const before = viewport.scrollTop;
+      viewport.scrollTop += speed;
+      if (viewport.scrollTop !== before) update();
+    });
+
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
+      clientY = e.clientY;
+      update();
+    };
+    const onUp = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
+      stop();
+      latest.current.commitDrop();
+    };
+    const onCancel = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
+      stop();
+      latest.current.handleDragEnd();
+    };
+    function stop() {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      stopPointerDragRef.current = null;
+      setPointerOffset(null);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    stopPointerDragRef.current = stop;
+  }
+
+  // Keyboard: arrow keys on a card's handle move it one place among the visible cards.
+  const [announcement, setAnnouncement] = React.useState("");
+  const refocusHandleIdRef = React.useRef<string | null>(null);
+
+  function moveWithKeyboard(item: QueueItem, offset: -1 | 1) {
+    const list = visibleListOf(item);
+    const index = list.findIndex((i) => i.id === item.id);
+    const neighbour = list[index + offset];
+    if (!neighbour) {
+      setAnnouncement(offset < 0 ? "Already at the top." : "Already at the bottom.");
+      return;
+    }
+    refocusHandleIdRef.current = item.id;
+    reorder(item.id, neighbour.id, sectionOf(item), offset < 0 ? "before" : "after");
+    setAnnouncement(
+      `${item.title ?? "Video"} moved to position ${index + offset + 1} of ${list.length}.`,
+    );
+  }
+
+  // Moving a node in the DOM drops its focus; hand it back to the moved card's handle.
+  React.useLayoutEffect(() => {
+    const id = refocusHandleIdRef.current;
+    if (!id) return;
+    refocusHandleIdRef.current = null;
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-queue-id="${CSS.escape(id)}"] [data-reorder-handle]`)
+      ?.focus();
+  });
 
   function shiftYForItem(id: string) {
     if (
@@ -236,6 +319,7 @@ export function QueuePanel() {
   }
 
   function renderCard(item: QueueItem) {
+    const lifted = item.id === draggingId && pointerOffset != null;
     return (
       <QueueItemCard
         key={item.id}
@@ -243,17 +327,25 @@ export function QueuePanel() {
         isActive={item.id === currentId}
         isDragging={item.id === draggingId}
         dragActive={Boolean(draggingId)}
-        shiftY={shiftYForItem(item.id)}
+        shiftY={lifted ? pointerOffset : shiftYForItem(item.id)}
+        lifted={lifted}
         showDropSlot={dropIndicator.id === item.id}
         overflowMenu={sidebarTab === "bookmarks"}
         onPlay={() => setCurrent(item.id)}
         onRemove={() => removeItem(item.id)}
         onToggleWatched={() => toggleWatched(item.id)}
         onToggleBookmark={() => toggleBookmark(item.id)}
-        onDragStart={(id, startY) => handleDragStart(id, startY)}
+        onDragStart={(id, startY) => {
+          // A touch drag is already moving this card; don't let the browser start another.
+          if (draggingIdRef.current) return false;
+          handleDragStart(id, startY);
+          return true;
+        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => e.preventDefault()}
         onDragEnd={handleDragEnd}
+        onHandlePointerDown={(e) => startPointerDrag(item.id, e)}
+        onHandleMove={(offset) => moveWithKeyboard(item, offset)}
       />
     );
   }
@@ -261,7 +353,10 @@ export function QueuePanel() {
   const tabCount = sidebarTab === "recent" ? unwatched.length : bookmarked.length;
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-background">
+    <div className="relative flex h-full min-w-0 flex-col bg-background">
+      <p className="sr-only" aria-live="polite">
+        {announcement}
+      </p>
       <div className="border-b border-border p-6 pb-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 font-bold tracking-tight text-foreground">
@@ -345,7 +440,7 @@ export function QueuePanel() {
             role="list"
             aria-label="Bookmarks"
             className="min-w-0 space-y-3"
-            onDragOver={handleBookmarksDragOver}
+            onDragOver={handleListDragOver}
             onDragLeave={handleListDragLeave}
             onDrop={handleDrop}
           >

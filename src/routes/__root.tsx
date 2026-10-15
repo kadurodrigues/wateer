@@ -11,6 +11,7 @@ import {
 import { type ReactNode } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/components/auth-provider";
 import { QueueProvider } from "@/components/queue-provider";
 import { ThemeProvider, themeInitScript } from "@/components/theme-provider";
 
@@ -136,11 +137,14 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <QueueProvider>
-          <Outlet />
-        </QueueProvider>
+        {/* First, so it is listening before the providers' startup effects can toast. */}
         <Toaster />
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <AuthProvider>
+          <QueueProvider>
+            <Outlet />
+          </QueueProvider>
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

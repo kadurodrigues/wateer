@@ -1,5 +1,5 @@
 import * as React from "react";
-import { History, ListPlus, Loader2, Trash2 } from "lucide-react";
+import { ListPlus, Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -9,7 +9,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -25,16 +24,22 @@ import { useQueue } from "@/components/queue-provider";
 import { formatRelativeDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export function QueueHistory() {
+/** Every video ever added, opened from the account menu. */
+export function QueueHistoryDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const { history, items, clearHistory, readdFromHistory } = useQueue();
-  const [open, setOpen] = React.useState(false);
   const [addingId, setAddingId] = React.useState<string | null>(null);
 
   const queueVideoIds = React.useMemo(() => new Set(items.map((item) => item.videoId)), [items]);
 
   function handleClear() {
     clearHistory();
-    setOpen(false);
+    onOpenChange(false);
   }
 
   async function handleReadd(videoId: string) {
@@ -47,18 +52,7 @@ export function QueueHistory() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 rounded-xl text-muted-foreground shadow-none drop-shadow-none hover:bg-muted hover:text-foreground hover:shadow-none"
-          aria-label="History"
-        >
-          <History className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(42rem,90vh)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b border-border px-6 py-4 text-left">
           <DialogTitle>History</DialogTitle>

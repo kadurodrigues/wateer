@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QueueItemCard } from "@/components/queue-item";
-import { QueueHistory } from "@/components/queue-history";
+import { AccountMenu } from "@/components/account-menu";
 import { useQueue } from "@/components/queue-provider";
 import type { QueueItem, SidebarTab } from "@/components/queue-provider";
 import {
@@ -371,7 +371,7 @@ export function QueuePanel() {
               {tabCount} {tabCount === 1 ? "video" : "videos"}
             </span>
             <div className="flex items-center gap-1">
-              <QueueHistory />
+              <AccountMenu />
             </div>
           </div>
         </div>
